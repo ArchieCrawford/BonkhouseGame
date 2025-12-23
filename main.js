@@ -10,6 +10,12 @@ import { AudioManager } from './AudioManager.js';
 import { UpgradeSystem } from './UpgradeSystem.js';
 import { AtmosphericEffects } from './AtmosphericEffects.js';
 import { CONFIG } from './config.js';
+import { actions } from "https://esm.sh/@farcaster/miniapp-sdk";
+
+window.addEventListener("load", () => {
+  actions.ready();
+});
+
 
 // Scene setup
 const scene = new THREE.Scene();
