@@ -190,6 +190,9 @@ const startWaveBtn = document.getElementById('startWaveBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const muteBtn = document.getElementById('muteBtn');
 const musicBtn = document.getElementById('musicBtn');
+const moveLeftBtn = document.getElementById('moveLeftBtn');
+const moveRightBtn = document.getElementById('moveRightBtn');
+const fireBtn = document.getElementById('fireBtn');
 const resumeBtn = document.getElementById('resumeBtn');
 const restartBtn = document.getElementById('restartBtn');
 const restartFromPauseBtn = document.getElementById('restartFromPauseBtn');
@@ -791,6 +794,72 @@ const input = {
   touchStartX: null,
   touchCurrentX: null
 };
+
+function bindHoldButton(button, onPress, onRelease) {
+  if (!button) return;
+  let activePointerId = null;
+  
+  const start = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activePointerId !== null) return;
+    activePointerId = e.pointerId;
+    if (button.setPointerCapture) {
+      button.setPointerCapture(activePointerId);
+    }
+    onPress();
+  };
+  
+  const end = (e) => {
+    if (activePointerId !== null && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    activePointerId = null;
+    onRelease();
+  };
+  
+  button.addEventListener('pointerdown', start);
+  button.addEventListener('pointerup', end);
+  button.addEventListener('pointercancel', end);
+  button.addEventListener('lostpointercapture', end);
+  button.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+bindHoldButton(
+  moveLeftBtn,
+  () => {
+    input.left = true;
+    input.touchStartX = null;
+    input.touchCurrentX = null;
+  },
+  () => {
+    input.left = false;
+  }
+);
+
+bindHoldButton(
+  moveRightBtn,
+  () => {
+    input.right = true;
+    input.touchStartX = null;
+    input.touchCurrentX = null;
+  },
+  () => {
+    input.right = false;
+  }
+);
+
+bindHoldButton(
+  fireBtn,
+  () => {
+    input.shoot = true;
+    input.touchStartX = null;
+    input.touchCurrentX = null;
+  },
+  () => {
+    input.shoot = false;
+  }
+);
 
 // Keyboard controls
 window.addEventListener('keydown', (e) => {

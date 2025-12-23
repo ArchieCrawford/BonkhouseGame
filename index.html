@@ -451,6 +451,46 @@
         bottom: 30px;
         right: 20px;
       }
+      #mobileControls {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        bottom: 20px;
+        display: none;
+        justify-content: space-between;
+        align-items: flex-end;
+        pointer-events: none;
+        z-index: 1200;
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      #mobileControls .control-group {
+        display: flex;
+        gap: 12px;
+        pointer-events: auto;
+      }
+      .mobile-btn {
+        width: 64px;
+        height: 64px;
+        padding: 0;
+        font-size: 24px;
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.45);
+        border: 2px solid rgba(255, 255, 255, 0.7);
+        touch-action: none;
+        user-select: none;
+      }
+      .mobile-btn.fire {
+        width: 78px;
+        height: 78px;
+        font-size: 22px;
+        background: rgba(231, 76, 60, 0.85);
+        border-color: rgba(255, 255, 255, 0.9);
+      }
+      @media (hover: none) and (pointer: coarse) {
+        #mobileControls {
+          display: flex;
+        }
+      }
       .btn {
         padding: 12px 24px;
         font-size: 18px;
@@ -981,6 +1021,15 @@
         <button id="muteBtn" class="btn icon-btn">🔊</button>
         <button id="musicBtn" class="btn icon-btn">🎵</button>
         <button id="pauseBtn" class="btn icon-btn">⏸</button>
+      </div>
+      <div id="mobileControls">
+        <div class="control-group">
+          <button id="moveLeftBtn" class="btn mobile-btn" aria-label="Move left">LEFT</button>
+          <button id="moveRightBtn" class="btn mobile-btn" aria-label="Move right">RIGHT</button>
+        </div>
+        <div class="control-group">
+          <button id="fireBtn" class="btn mobile-btn fire" aria-label="Fire">FIRE</button>
+        </div>
       </div>
       <div id="debugInfo">
         <div>Player: <span id="debugPlayerPos">0, 0, 0</span></div>
