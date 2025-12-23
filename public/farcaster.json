@@ -1,0 +1,10 @@
+{
+  "name": "Bonkhouse",
+  "description": "Bonkhouse lane shooter starring the legendary Bonkhouse hero.",
+  "icon": "https://bonkhouse.netlify.app/og-image.png",
+  "url": "https://bonkhouse.netlify.app/",
+  "developer": {
+    "name": "Bonkhouse",
+    "url": "https://bonkhouse.netlify.app/"
+  }
+}

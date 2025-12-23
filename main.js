@@ -176,7 +176,9 @@ let gameState = {
   bossSpawned: false,
   survivalTime: 0,
   gameStartTime: 0,
-  powerUpSpawnTimer: 0
+  powerUpSpawnTimer: 0,
+  lastEnemySeenTime: 0,
+  lastEnemySpawnTime: 0
 };
 
 // UI elements
@@ -923,6 +925,11 @@ function startWave() {
   gameState.enemiesSpawnedThisWave = 0;
   gameState.enemiesKilledThisWave = 0;
   gameState.bossSpawned = false; // Reset boss flag
+  gameState.powerUpSpawnTimer = 0;
+  gameState.spawnTimer = 0;
+  const now = Date.now();
+  gameState.lastEnemySeenTime = now;
+  gameState.lastEnemySpawnTime = now;
   
   // Start time tracking on first wave
   if (gameState.wave === 1) {
@@ -1077,6 +1084,23 @@ function showBossBanner() {
   }, 3000);
 }
 
+function completeWave() {
+  if (!gameState.waveInProgress) return;
+  
+  gameState.waveInProgress = false;
+  gameState.wave++;
+  gameState.waveStartDelay = CONFIG.WAVE_START_DELAY;
+  waveEl.textContent = gameState.wave;
+  
+  showWaveCompleteBanner();
+  
+  setTimeout(() => {
+    startWaveBtn.textContent = `START WAVE ${gameState.wave}`;
+    // Show upgrades menu instead of start button
+    showUpgradesMenu();
+  }, 2000);
+}
+
 function spawnEnemy(forceBoss = false) {
   const enemy = enemyPool.get();
   if (!enemy) return; // Pool exhausted
@@ -1092,6 +1116,9 @@ function spawnEnemy(forceBoss = false) {
   
   enemy.spawn(x, z, speed, hp, gameState.wave, forceBoss);
   gameState.enemiesSpawnedThisWave++;
+  const now = Date.now();
+  gameState.lastEnemySpawnTime = now;
+  gameState.lastEnemySeenTime = now;
   
   // Spawn effect - bigger for bosses
   const effectPos = new THREE.Vector3(x, 0.5, z);
@@ -1165,7 +1192,10 @@ function shootBullet() {
       laserBullet.spawn(playerPos);
       laserBullet.mesh.scale.set(0.5, 0.5, 1.5); // Thinner, longer
       laserBullet.mesh.material.color.setHex(0x00FFFF); // Cyan
-      laserBullet.mesh.material.emissive.setHex(0x0088FF);
+      if (laserBullet.mesh.material.emissive) {
+        laserBullet.mesh.material.emissive.setHex(0x0088FF);
+        laserBullet.mesh.material.emissiveIntensity = 0.9;
+      }
       break;
       
     case 'machinegun':
@@ -1426,6 +1456,7 @@ function updatePlayerUI() {
 
 function updateGame(deltaTime) {
   if (gameState.isPaused || gameState.isGameOver) return;
+  const now = Date.now();
   
   // Calculate player movement direction
   let moveDirection = 0;
@@ -1470,6 +1501,9 @@ function updateGame(deltaTime) {
   if (gameState.waveInProgress) {
     const maxEnemies = getEnemiesForWave(gameState.wave);
     const activeEnemies = enemyPool.getActive().filter(e => !e.isDead).length;
+    if (activeEnemies > 0) {
+      gameState.lastEnemySeenTime = now;
+    }
     
     // Boss wave - spawn one boss at the start
     if (gameState.wave % 5 === 0 && gameState.wave >= 5 && !gameState.bossSpawned) {
@@ -1488,22 +1522,12 @@ function updateGame(deltaTime) {
       }
     }
     
-    // Check if wave complete
-    if (gameState.enemiesSpawnedThisWave >= maxEnemies && activeEnemies === 0) {
-      // Wave complete!
-      gameState.waveInProgress = false;
-      gameState.wave++;
-      gameState.waveStartDelay = CONFIG.WAVE_START_DELAY;
-      waveEl.textContent = gameState.wave;
-      
-      // Show wave complete banner
-      showWaveCompleteBanner();
-      
-      setTimeout(() => {
-        startWaveBtn.textContent = `START WAVE ${gameState.wave}`;
-        // Show upgrades menu instead of start button
-        showUpgradesMenu();
-      }, 2000);
+    // Check if wave complete or stalled (no enemies showing up)
+    const lastEnemyActivity = Math.max(gameState.lastEnemySeenTime, gameState.lastEnemySpawnTime);
+    const spawnStalled = now - lastEnemyActivity > 5000;
+    if ((gameState.enemiesSpawnedThisWave >= maxEnemies && activeEnemies === 0) ||
+        (activeEnemies === 0 && spawnStalled)) {
+      completeWave();
     }
   }
   
@@ -1538,7 +1562,8 @@ function updateGame(deltaTime) {
   powerUpPool.getActive().forEach(powerUp => powerUp.update(deltaTime));
   
   // Spawn power-ups randomly during wave
-  if (gameState.waveInProgress) {
+  const activeEnemiesForPowerups = enemyPool.getActive().filter(e => !e.isDead).length;
+  if (gameState.waveInProgress && activeEnemiesForPowerups > 0) {
     gameState.powerUpSpawnTimer += deltaTime;
     if (gameState.powerUpSpawnTimer >= 1.0) {
       gameState.powerUpSpawnTimer = 0;
@@ -1669,7 +1694,9 @@ function restartGame() {
     bossSpawned: false,
     survivalTime: 0,
     gameStartTime: Date.now(),
-    powerUpSpawnTimer: 0
+    powerUpSpawnTimer: 0,
+    lastEnemySeenTime: Date.now(),
+    lastEnemySpawnTime: Date.now()
   };
   
   // Clear pools

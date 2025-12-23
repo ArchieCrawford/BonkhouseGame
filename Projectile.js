@@ -9,8 +9,12 @@ export class Projectile {
     
     // Create projectile (golden energy bullet from Bonkhouse)
     const geometry = new THREE.SphereGeometry(0.15, 8, 8);
-    const material = new THREE.MeshBasicMaterial({ 
+    const material = new THREE.MeshStandardMaterial({ 
       color: 0xFFD700, // Gold
+      emissive: 0xFFAA00,
+      emissiveIntensity: 0.7,
+      metalness: 0.4,
+      roughness: 0.3,
       transparent: true,
       opacity: 0.95
     });
@@ -51,7 +55,10 @@ export class Projectile {
     // Reset bullet appearance and properties
     this.mesh.scale.set(1, 1, 1);
     this.mesh.material.color.setHex(0xFFD700);
-    this.mesh.material.emissive.setHex(0xFFAA00);
+    if (this.mesh.material.emissive) {
+      this.mesh.material.emissive.setHex(0xFFAA00);
+      this.mesh.material.emissiveIntensity = 0.7;
+    }
     this.mesh.userData.angleOffset = null;
   }
   
