@@ -1,0 +1,13 @@
+{
+  "name": "Lane Defenders: Isometric Assault",
+  "revisionLabel": "Fixed syntax error with reserved keyword 'package'",
+  "description": "Bonkhouse",
+  "mode": "Universal",
+  "exportDate": "2025-12-23T19:21:34.132Z",
+  "assetCount": 6,
+  "assetTypes": [
+    "glb",
+    "webp",
+    "png"
+  ]
+}

@@ -1,0 +1,1724 @@
+import * as THREE from 'three';
+import { Player } from './Player.js';
+import { Enemy } from './Enemy.js';
+import { Projectile } from './Projectile.js';
+import { Particle } from './Particle.js';
+import { PowerUp } from './PowerUp.js';
+import { Lane } from './Lane.js';
+import { ObjectPool } from './ObjectPool.js';
+import { AudioManager } from './AudioManager.js';
+import { UpgradeSystem } from './UpgradeSystem.js';
+import { AtmosphericEffects } from './AtmosphericEffects.js';
+import { CONFIG } from './config.js';
+
+// Scene setup
+const scene = new THREE.Scene();
+
+// Create realistic daytime sky with gradient
+const skyColor = new THREE.Color(0x87ceeb); // Light blue sky
+const horizonColor = new THREE.Color(0xb8d4e8); // Lighter horizon
+scene.background = skyColor;
+scene.fog = new THREE.Fog(horizonColor, 40, 120); // Atmospheric haze
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+// Camera positioned to clearly show the player and lane ahead
+camera.position.set(0, 14, 8);
+camera.lookAt(0, 0, -15);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+// Create sky dome with clouds
+function createSky() {
+  const skyGeometry = new THREE.SphereGeometry(500, 32, 15);
+  const skyMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(0x4a90e2) },
+      bottomColor: { value: new THREE.Color(0xb8d4e8) },
+      offset: { value: 33 },
+      exponent: { value: 0.6 }
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 bottomColor;
+      uniform float offset;
+      uniform float exponent;
+      varying vec3 vWorldPosition;
+      void main() {
+        float h = normalize(vWorldPosition + offset).y;
+        gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+      }
+    `,
+    side: THREE.BackSide
+  });
+  
+  const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+  scene.add(sky);
+  
+  // Add simple clouds
+  const cloudGroup = new THREE.Group();
+  const cloudGeometry = new THREE.SphereGeometry(8, 8, 8);
+  const cloudMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.6
+  });
+  
+  // Create scattered clouds
+  for (let i = 0; i < 15; i++) {
+    const cloud = new THREE.Mesh(cloudGeometry, cloudMaterial);
+    cloud.position.set(
+      (Math.random() - 0.5) * 200,
+      30 + Math.random() * 40,
+      -80 - Math.random() * 100
+    );
+    cloud.scale.set(
+      1 + Math.random() * 2,
+      0.5 + Math.random() * 0.5,
+      1 + Math.random() * 2
+    );
+    cloudGroup.add(cloud);
+  }
+  
+  scene.add(cloudGroup);
+  return cloudGroup;
+}
+
+const clouds = createSky();
+
+// UNIFIED LIGHTING SYSTEM - Premium daytime lighting
+// Main sunlight - positioned to match sky
+const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.8); // Warm daylight
+sunLight.position.set(30, 50, 20); // High angle like mid-morning sun
+sunLight.castShadow = true;
+
+// Shadow configuration for quality
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 200;
+sunLight.shadow.camera.left = -50;
+sunLight.shadow.camera.right = 50;
+sunLight.shadow.camera.top = 50;
+sunLight.shadow.camera.bottom = -50;
+sunLight.shadow.bias = -0.0001;
+
+scene.add(sunLight);
+
+// Ambient light - soft skylight
+const ambientLight = new THREE.AmbientLight(0xb8d4e8, 0.6); // Cool ambient from sky
+scene.add(ambientLight);
+
+// Hemisphere light for natural sky/ground color variation
+const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x6b8cae, 0.5);
+scene.add(hemiLight);
+
+// Subtle fill light to soften shadows
+const fillLight = new THREE.DirectionalLight(0x9ec5d9, 0.3);
+fillLight.position.set(-20, 15, -10);
+scene.add(fillLight);
+
+// Warm highlights on player (hero lighting)
+const heroLight = new THREE.SpotLight(0xffd89b, 1.2, 30, Math.PI / 5, 0.4);
+heroLight.position.set(0, 15, 0);
+heroLight.target.position.set(0, 0, -5);
+heroLight.castShadow = false; // Don't need shadows from this one
+scene.add(heroLight);
+scene.add(heroLight.target);
+
+// Cool accent light on enemies (visual distinction)
+const enemyLight = new THREE.PointLight(0x8b9dc3, 0.8, 40);
+enemyLight.position.set(0, 5, -40);
+scene.add(enemyLight);
+
+// Audio
+const audio = new AudioManager();
+
+// Upgrade system
+const upgradeSystem = new UpgradeSystem();
+
+// Game objects
+const lane = new Lane(scene);
+const player = new Player(scene);
+const atmosphere = new AtmosphericEffects(scene);
+
+// Object pools
+const bulletPool = new ObjectPool(scene, Projectile, CONFIG.MAX_BULLETS);
+const enemyPool = new ObjectPool(scene, Enemy, CONFIG.MAX_ENEMIES);
+const particlePool = new ObjectPool(scene, Particle, CONFIG.MAX_PARTICLES);
+const powerUpPool = new ObjectPool(scene, PowerUp, CONFIG.MAX_POWERUPS);
+
+// Game state
+let gameState = {
+  wave: 1,
+  coins: 0,
+  enemiesSpawnedThisWave: 0,
+  enemiesKilledThisWave: 0,
+  waveInProgress: false,
+  waveStartDelay: 0,
+  isPaused: false,
+  isGameOver: false,
+  cameraShake: 0,
+  bossSpawned: false,
+  survivalTime: 0,
+  gameStartTime: 0,
+  powerUpSpawnTimer: 0
+};
+
+// UI elements
+const playerHPEl = document.getElementById('playerHP');
+const playerHealthFillEl = document.getElementById('playerHealthFill');
+const coinsEl = document.getElementById('coins');
+const waveEl = document.getElementById('wave');
+const startWaveBtn = document.getElementById('startWaveBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const muteBtn = document.getElementById('muteBtn');
+const musicBtn = document.getElementById('musicBtn');
+const resumeBtn = document.getElementById('resumeBtn');
+const restartBtn = document.getElementById('restartBtn');
+const restartFromPauseBtn = document.getElementById('restartFromPauseBtn');
+const gameOverEl = document.getElementById('gameOver');
+const pauseMenuEl = document.getElementById('pauseMenu');
+const finalWaveEl = document.getElementById('finalWave');
+const finalCoinsEl = document.getElementById('finalCoins');
+const debugInfoEl = document.getElementById('debugInfo');
+const debugPlayerPosEl = document.getElementById('debugPlayerPos');
+const debugCameraPosEl = document.getElementById('debugCameraPos');
+const debugEnemiesEl = document.getElementById('debugEnemies');
+const debugBulletsEl = document.getElementById('debugBullets');
+const loadingScreenEl = document.getElementById('loadingScreen');
+const loadingBarFillEl = document.getElementById('loadingBarFill');
+const loadingPercentEl = document.getElementById('loadingPercent');
+const loadingTipEl = document.getElementById('loadingTip');
+const mainMenuEl = document.getElementById('mainMenu');
+const playBtnEl = document.getElementById('playBtn');
+const settingsBtnEl = document.getElementById('settingsBtn');
+const leaderboardBtnEl = document.getElementById('leaderboardBtn');
+const settingsMenuEl = document.getElementById('settingsMenu');
+const leaderboardMenuEl = document.getElementById('leaderboardMenu');
+const storeMenuEl = document.getElementById('storeMenu');
+const storeBtnEl = document.getElementById('storeBtn');
+const storeCoinsEl = document.getElementById('storeCoins');
+const characterGridEl = document.getElementById('characterGrid');
+const coinPackagesGridEl = document.getElementById('coinPackagesGrid');
+const charactersTabBtnEl = document.getElementById('charactersTabBtn');
+const coinsTabBtnEl = document.getElementById('coinsTabBtn');
+const charactersTabEl = document.getElementById('charactersTab');
+const coinsTabEl = document.getElementById('coinsTab');
+const backFromStoreBtn = document.getElementById('backFromStoreBtn');
+const playerNameInputEl = document.getElementById('playerNameInput');
+const saveSettingsBtnEl = document.getElementById('saveSettingsBtn');
+const backFromSettingsBtnEl = document.getElementById('backFromSettingsBtn');
+const backFromLeaderboardBtnEl = document.getElementById('backFromLeaderboardBtn');
+const leaderboardListEl = document.getElementById('leaderboardList');
+const finalTimeEl = document.getElementById('finalTime');
+const newHighScoreMsgEl = document.getElementById('newHighScoreMsg');
+const waveBannerEl = document.getElementById('waveBanner');
+const powerUpIndicatorEl = document.getElementById('powerUpIndicator');
+const powerUpNameEl = document.getElementById('powerUpName');
+const powerUpTimerEl = document.getElementById('powerUpTimer');
+const upgradesMenuEl = document.getElementById('upgradesMenu');
+const upgradesCoinsAmountEl = document.getElementById('upgradesCoinsAmount');
+const upgradesListEl = document.getElementById('upgradesList');
+const closeUpgradesBtnEl = document.getElementById('closeUpgradesBtn');
+
+// Settings and Profile System
+let gameSettings = {
+  playerName: 'Player',
+  difficulty: 'medium',
+  totalCoins: 0 // Lifetime coins for store purchases
+};
+
+let difficultyMultipliers = {
+  easy: 0.7,
+  medium: 1.0,
+  hard: 1.4
+};
+
+// Character Store System
+let characterStore = {
+  characters: [
+    {
+      id: 'bonkhouse',
+      name: 'Bonkhouse',
+      icon: '🏠',
+      price: 0,
+      owned: true,
+      glbUrl: 'https://rosebud.ai/assets/Meshy_Merged_Animations.glb?wfmY'
+    },
+    {
+      id: 'warrior',
+      name: 'Warrior Dog',
+      icon: '⚔️',
+      price: 500,
+      owned: false,
+      glbUrl: null // Will be added later
+    },
+    {
+      id: 'mage',
+      name: 'Wizard Dog',
+      icon: '🧙',
+      price: 1000,
+      owned: false,
+      glbUrl: null
+    },
+    {
+      id: 'ninja',
+      name: 'Ninja Dog',
+      icon: '🥷',
+      price: 1500,
+      owned: false,
+      glbUrl: null
+    },
+    {
+      id: 'robot',
+      name: 'Robo Dog',
+      icon: '🤖',
+      price: 2000,
+      owned: false,
+      glbUrl: null
+    },
+    {
+      id: 'dragon',
+      name: 'Dragon Dog',
+      icon: '🐉',
+      price: 3000,
+      owned: false,
+      glbUrl: null
+    }
+  ],
+  selectedCharacter: 'bonkhouse',
+  coinPackages: [
+    {
+      id: 'starter',
+      name: 'Starter Pack',
+      icon: '💰',
+      coins: 100,
+      price: '$0.99',
+      bonus: null
+    },
+    {
+      id: 'bronze',
+      name: 'Bronze Pack',
+      icon: '💵',
+      coins: 250,
+      price: '$1.99',
+      bonus: '+50 BONUS'
+    },
+    {
+      id: 'silver',
+      name: 'Silver Pack',
+      icon: '💸',
+      coins: 600,
+      price: '$4.99',
+      bonus: '+100 BONUS',
+      popular: true
+    },
+    {
+      id: 'gold',
+      name: 'Gold Pack',
+      icon: '💎',
+      coins: 1500,
+      price: '$9.99',
+      bonus: '+300 BONUS'
+    },
+    {
+      id: 'platinum',
+      name: 'Platinum Pack',
+      icon: '👑',
+      coins: 3500,
+      price: '$19.99',
+      bonus: '+1000 BONUS'
+    },
+    {
+      id: 'mega',
+      name: 'Mega Pack',
+      icon: '🌟',
+      coins: 10000,
+      price: '$49.99',
+      bonus: '+5000 BONUS'
+    }
+  ]
+};
+
+function loadCharacterStore() {
+  const saved = localStorage.getItem('bonkhouseCharacterStore');
+  if (saved) {
+    const savedData = JSON.parse(saved);
+    characterStore.selectedCharacter = savedData.selectedCharacter || 'bonkhouse';
+    // Merge owned status
+    savedData.characters?.forEach(savedChar => {
+      const char = characterStore.characters.find(c => c.id === savedChar.id);
+      if (char) {
+        char.owned = savedChar.owned;
+      }
+    });
+  }
+}
+
+function saveCharacterStore() {
+  const saveData = {
+    selectedCharacter: characterStore.selectedCharacter,
+    characters: characterStore.characters.map(c => ({
+      id: c.id,
+      owned: c.owned
+    }))
+  };
+  localStorage.setItem('bonkhouseCharacterStore', JSON.stringify(saveData));
+}
+
+function displayCharacterStore() {
+  storeCoinsEl.textContent = gameSettings.totalCoins;
+  characterGridEl.innerHTML = '';
+  
+  characterStore.characters.forEach(character => {
+    const card = document.createElement('div');
+    card.className = 'character-card';
+    if (character.owned) card.classList.add('owned');
+    if (character.id === characterStore.selectedCharacter) card.classList.add('selected');
+    if (!character.owned) card.classList.add('locked');
+    
+    const statusIcon = character.owned 
+      ? `<div class="character-check">✓</div>`
+      : `<div class="character-lock">🔒</div>`;
+    
+    const buttonHtml = character.owned
+      ? (character.id === characterStore.selectedCharacter
+        ? `<button class="character-btn selected-btn" disabled>SELECTED</button>`
+        : `<button class="character-btn select-btn" onclick="selectCharacter('${character.id}')">SELECT</button>`)
+      : `<button class="character-btn" onclick="buyCharacter('${character.id}')" ${gameSettings.totalCoins < character.price ? 'disabled' : ''}>
+          ${gameSettings.totalCoins >= character.price ? 'BUY' : 'LOCKED'}
+        </button>`;
+    
+    card.innerHTML = `
+      ${statusIcon}
+      <div class="character-icon">${character.icon}</div>
+      <div class="character-name">${character.name}</div>
+      ${!character.owned ? `<div class="character-price">💰 ${character.price} coins</div>` : ''}
+      ${buttonHtml}
+    `;
+    
+    characterGridEl.appendChild(card);
+  });
+}
+
+window.buyCharacter = function(characterId) {
+  const character = characterStore.characters.find(c => c.id === characterId);
+  if (!character || character.owned) return;
+  
+  if (gameSettings.totalCoins >= character.price) {
+    gameSettings.totalCoins -= character.price;
+    character.owned = true;
+    characterStore.selectedCharacter = characterId;
+    
+    saveCharacterStore();
+    saveSettings();
+    displayCharacterStore();
+    
+    // Play success sound (power-up pickup sound for purchase)
+    audio.playPowerupPickup();
+  }
+};
+
+window.selectCharacter = function(characterId) {
+  const character = characterStore.characters.find(c => c.id === characterId);
+  if (!character || !character.owned) return;
+  
+  characterStore.selectedCharacter = characterId;
+  saveCharacterStore();
+  displayCharacterStore();
+  
+  // Play selection sound
+  audio.playHit();
+};
+
+function displayCoinPackages() {
+  coinPackagesGridEl.innerHTML = '';
+  
+  characterStore.coinPackages.forEach(pkg => {
+    const card = document.createElement('div');
+    card.className = 'coin-package-card';
+    if (pkg.popular) card.classList.add('popular');
+    
+    card.innerHTML = `
+      <div class="coin-package-icon">${pkg.icon}</div>
+      <div class="coin-package-amount">💰 ${pkg.coins.toLocaleString()} Coins</div>
+      <div class="coin-package-price">${pkg.price}</div>
+      ${pkg.bonus ? `<div class="coin-package-bonus">${pkg.bonus}</div>` : ''}
+      <button class="buy-coins-btn" onclick="buyCoinPackage('${pkg.id}')">PURCHASE</button>
+    `;
+    
+    coinPackagesGridEl.appendChild(card);
+  });
+}
+
+window.buyCoinPackage = function(packageId) {
+  const pkg = characterStore.coinPackages.find(p => p.id === packageId);
+  if (!pkg) return;
+  
+  // Demo purchase - add coins immediately
+  gameSettings.totalCoins += pkg.coins;
+  saveSettings();
+  
+  // Update display
+  storeCoinsEl.textContent = gameSettings.totalCoins;
+  displayCharacterStore(); // Refresh character cards to update buy button states
+  
+  // Play success sound and show confirmation
+  audio.playPowerupPickup();
+  
+  // Show visual feedback
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, rgba(46, 204, 113, 0.95), rgba(39, 174, 96, 0.95));
+    color: white;
+    padding: 30px 50px;
+    border-radius: 15px;
+    border: 3px solid #2ecc71;
+    font-size: 24px;
+    font-weight: bold;
+    font-family: 'Orbitron', sans-serif;
+    z-index: 10000;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    animation: purchasePopup 2s ease-out forwards;
+  `;
+  notification.innerHTML = `
+    <div style="font-size: 48px; margin-bottom: 10px;">✅</div>
+    <div>Purchase Successful!</div>
+    <div style="font-size: 32px; margin-top: 10px; color: #f1c40f;">+${pkg.coins.toLocaleString()} 💰</div>
+  `;
+  document.body.appendChild(notification);
+  
+  // Add animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes purchasePopup {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  setTimeout(() => {
+    document.body.removeChild(notification);
+    document.head.removeChild(style);
+  }, 2000);
+};
+
+// Load settings from localStorage
+function loadSettings() {
+  const saved = localStorage.getItem('bonkhouseSettings');
+  if (saved) {
+    gameSettings = JSON.parse(saved);
+  }
+  playerNameInputEl.value = gameSettings.playerName;
+  updateDifficultyButtons();
+}
+
+function saveSettings() {
+  gameSettings.playerName = playerNameInputEl.value.trim() || 'Player';
+  // Don't overwrite totalCoins when saving settings
+  const currentSettings = JSON.parse(localStorage.getItem('bonkhouseSettings') || '{}');
+  gameSettings.totalCoins = currentSettings.totalCoins || gameSettings.totalCoins || 0;
+  localStorage.setItem('bonkhouseSettings', JSON.stringify(gameSettings));
+}
+
+function updateDifficultyButtons() {
+  document.querySelectorAll('.difficulty-btn').forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.dataset.difficulty === gameSettings.difficulty) {
+      btn.classList.add('active');
+    }
+  });
+}
+
+// Leaderboard System
+function saveHighScore(wave, time, coins) {
+  const leaderboard = getLeaderboard();
+  const score = {
+    name: gameSettings.playerName,
+    wave: wave,
+    time: time,
+    coins: coins,
+    date: Date.now()
+  };
+  
+  // Check if this is a new high score before adding
+  const isNewHighScore = leaderboard.length === 0 || time > leaderboard[0].time;
+  
+  leaderboard.push(score);
+  // Sort by time survived (descending)
+  leaderboard.sort((a, b) => b.time - a.time);
+  // Keep top 10
+  const top10 = leaderboard.slice(0, 10);
+  localStorage.setItem('bonkhouseLeaderboard', JSON.stringify(top10));
+  
+  return isNewHighScore;
+}
+
+function getLeaderboard() {
+  const saved = localStorage.getItem('bonkhouseLeaderboard');
+  return saved ? JSON.parse(saved) : [];
+}
+
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function displayLeaderboard() {
+  const leaderboard = getLeaderboard();
+  leaderboardListEl.innerHTML = '';
+  
+  if (leaderboard.length === 0) {
+    leaderboardListEl.innerHTML = '<p style="text-align: center; color: #B0BEC5; padding: 20px;">No scores yet. Be the first!</p>';
+    return;
+  }
+  
+  leaderboard.forEach((score, index) => {
+    const entry = document.createElement('div');
+    entry.className = 'leaderboard-entry' + (index < 3 ? ' top3' : '');
+    
+    const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+    
+    entry.innerHTML = `
+      <div class="leaderboard-rank">${rankEmoji}</div>
+      <div class="leaderboard-name">${score.name}</div>
+      <div class="leaderboard-score">Wave ${score.wave}</div>
+      <div class="leaderboard-time">${formatTime(score.time)}</div>
+    `;
+    leaderboardListEl.appendChild(entry);
+  });
+}
+
+// Loading tips
+const loadingTips = [
+  "Bonkhouse never retreats.",
+  "Eliminate enemies to earn upgrades.",
+  "Stronger waves bring bigger rewards.",
+  "Use movement to dodge incoming threats.",
+  "The house on his back is his strength."
+];
+
+// Load settings and character store on startup
+loadSettings();
+loadCharacterStore();
+
+// Loading screen sequence
+let loadingProgress = 0;
+const loadingInterval = setInterval(() => {
+  loadingProgress += Math.random() * 15 + 5;
+  if (loadingProgress >= 100) {
+    loadingProgress = 100;
+    clearInterval(loadingInterval);
+    
+    setTimeout(() => {
+      loadingScreenEl.classList.add('hidden');
+      setTimeout(() => {
+        mainMenuEl.classList.add('show');
+      }, 500);
+    }, 500);
+  }
+  
+  loadingBarFillEl.style.width = loadingProgress + '%';
+  loadingPercentEl.textContent = `Loading... ${Math.floor(loadingProgress)}%`;
+  
+  // Rotate tips
+  if (Math.random() < 0.3) {
+    const randomTip = loadingTips[Math.floor(Math.random() * loadingTips.length)];
+    loadingTipEl.textContent = randomTip;
+  }
+}, 200);
+
+// Debug toggle (click top-left corner 5 times)
+let debugClickCount = 0;
+let debugClickTimer = null;
+document.getElementById('topLeft').addEventListener('click', () => {
+  debugClickCount++;
+  clearTimeout(debugClickTimer);
+  
+  if (debugClickCount >= 5) {
+    debugInfoEl.classList.toggle('show');
+    debugClickCount = 0;
+  }
+  
+  debugClickTimer = setTimeout(() => {
+    debugClickCount = 0;
+  }, 1000);
+});
+
+// Event listeners
+playBtnEl.addEventListener('click', () => {
+  audio.init();
+  mainMenuEl.classList.remove('show');
+  startWaveBtn.classList.add('show');
+});
+
+settingsBtnEl.addEventListener('click', () => {
+  mainMenuEl.classList.remove('show');
+  settingsMenuEl.style.display = 'flex';
+});
+
+leaderboardBtnEl.addEventListener('click', () => {
+  mainMenuEl.classList.remove('show');
+  displayLeaderboard();
+  leaderboardMenuEl.style.display = 'flex';
+});
+
+storeBtnEl.addEventListener('click', () => {
+  mainMenuEl.classList.remove('show');
+  displayCharacterStore();
+  displayCoinPackages();
+  // Default to characters tab
+  charactersTabEl.style.display = 'block';
+  coinsTabEl.style.display = 'none';
+  charactersTabBtnEl.classList.add('active');
+  coinsTabBtnEl.classList.remove('active');
+  storeMenuEl.style.display = 'flex';
+});
+
+backFromStoreBtn.addEventListener('click', () => {
+  storeMenuEl.style.display = 'none';
+  mainMenuEl.classList.add('show');
+});
+
+charactersTabBtnEl.addEventListener('click', () => {
+  charactersTabEl.style.display = 'block';
+  coinsTabEl.style.display = 'none';
+  charactersTabBtnEl.classList.add('active');
+  coinsTabBtnEl.classList.remove('active');
+});
+
+coinsTabBtnEl.addEventListener('click', () => {
+  charactersTabEl.style.display = 'none';
+  coinsTabEl.style.display = 'block';
+  charactersTabBtnEl.classList.remove('active');
+  coinsTabBtnEl.classList.add('active');
+});
+
+saveSettingsBtnEl.addEventListener('click', () => {
+  saveSettings();
+  settingsMenuEl.style.display = 'none';
+  mainMenuEl.classList.add('show');
+});
+
+backFromSettingsBtnEl.addEventListener('click', () => {
+  settingsMenuEl.style.display = 'none';
+  mainMenuEl.classList.add('show');
+});
+
+backFromLeaderboardBtnEl.addEventListener('click', () => {
+  leaderboardMenuEl.style.display = 'none';
+  mainMenuEl.classList.add('show');
+});
+
+// Difficulty button handlers
+document.querySelectorAll('.difficulty-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    gameSettings.difficulty = btn.dataset.difficulty;
+    updateDifficultyButtons();
+  });
+});
+
+startWaveBtn.addEventListener('click', () => {
+  audio.init();
+  startWave();
+});
+
+pauseBtn.addEventListener('click', () => {
+  togglePause();
+});
+
+muteBtn.addEventListener('click', () => {
+  audio.init();
+  const muted = audio.toggleMute();
+  muteBtn.textContent = muted ? '🔇' : '🔊';
+});
+
+musicBtn.addEventListener('click', () => {
+  audio.init();
+  const musicMuted = audio.toggleMusicMute();
+  musicBtn.textContent = musicMuted ? '🎵' : '🎶';
+});
+
+resumeBtn.addEventListener('click', () => {
+  togglePause();
+});
+
+restartBtn.addEventListener('click', () => {
+  restartGame();
+});
+
+restartFromPauseBtn.addEventListener('click', () => {
+  gameState.isPaused = false;
+  pauseMenuEl.classList.remove('show');
+  restartGame();
+});
+
+closeUpgradesBtnEl.addEventListener('click', () => {
+  upgradesMenuEl.classList.remove('show');
+  startWaveBtn.classList.add('show');
+});
+
+// Input handling
+const input = {
+  left: false,
+  right: false,
+  shoot: false, // Manual shooting trigger
+  touchStartX: null,
+  touchCurrentX: null
+};
+
+// Keyboard controls
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+    input.left = true;
+  }
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+    input.right = true;
+  }
+  if (e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault(); // Prevent page scroll
+    input.shoot = true;
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+    input.left = false;
+  }
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+    input.right = false;
+  }
+  if (e.key === ' ' || e.key === 'Spacebar') {
+    input.shoot = false;
+  }
+});
+
+// Touch/mouse controls for movement and shooting
+let touchStartTime = 0;
+let touchMoved = false;
+
+renderer.domElement.addEventListener('touchstart', (e) => {
+  input.touchStartX = e.touches[0].clientX;
+  input.touchCurrentX = e.touches[0].clientX;
+  touchStartTime = Date.now();
+  touchMoved = false;
+});
+
+renderer.domElement.addEventListener('touchmove', (e) => {
+  if (input.touchStartX !== null) {
+    const moved = Math.abs(e.touches[0].clientX - input.touchStartX);
+    if (moved > 10) { // More than 10px = drag for movement
+      touchMoved = true;
+    }
+    input.touchCurrentX = e.touches[0].clientX;
+  }
+});
+
+renderer.domElement.addEventListener('touchend', (e) => {
+  // If tap was quick and didn't move much, it's a shoot input
+  const touchDuration = Date.now() - touchStartTime;
+  if (!touchMoved && touchDuration < 300) {
+    // Quick tap = shoot
+    input.shoot = true;
+    setTimeout(() => { input.shoot = false; }, 50); // Brief trigger
+  }
+  
+  input.touchStartX = null;
+  input.touchCurrentX = null;
+  touchMoved = false;
+});
+
+// Mouse controls (for desktop)
+let mouseDown = false;
+let mouseStartTime = 0;
+let mouseMoved = false;
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  input.touchStartX = e.clientX;
+  input.touchCurrentX = e.clientX;
+  mouseStartTime = Date.now();
+  mouseMoved = false;
+});
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (mouseDown) {
+    const moved = Math.abs(e.clientX - input.touchStartX);
+    if (moved > 10) { // More than 10px = drag for movement
+      mouseMoved = true;
+    }
+    input.touchCurrentX = e.clientX;
+  }
+});
+
+renderer.domElement.addEventListener('mouseup', (e) => {
+  // If click was quick and didn't move much, it's a shoot input
+  const clickDuration = Date.now() - mouseStartTime;
+  if (!mouseMoved && clickDuration < 300) {
+    // Quick click = shoot
+    input.shoot = true;
+    setTimeout(() => { input.shoot = false; }, 50); // Brief trigger
+  }
+  
+  mouseDown = false;
+  input.touchStartX = null;
+  input.touchCurrentX = null;
+  mouseMoved = false;
+});
+
+renderer.domElement.addEventListener('mouseleave', () => {
+  mouseDown = false;
+  input.touchStartX = null;
+  input.touchCurrentX = null;
+  mouseMoved = false;
+});
+
+// Window resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Wave management
+function getEnemiesForWave(wave) {
+  return CONFIG.WAVE_1_ENEMIES + (wave - 1) * CONFIG.ENEMIES_INCREASE_PER_WAVE;
+}
+
+function getEnemySpeedForWave(wave) {
+  return CONFIG.ENEMY_BASE_SPEED * (1 + (wave - 1) * CONFIG.ENEMY_SPEED_INCREASE_PER_WAVE);
+}
+
+function getEnemyHPForWave(wave) {
+  return Math.ceil(CONFIG.ENEMY_BASE_HP * (1 + (wave - 1) * CONFIG.ENEMY_HP_INCREASE_PER_WAVE));
+}
+
+function startWave() {
+  startWaveBtn.classList.remove('show');
+  upgradesMenuEl.classList.remove('show');
+  gameState.waveInProgress = true;
+  gameState.enemiesSpawnedThisWave = 0;
+  gameState.enemiesKilledThisWave = 0;
+  gameState.bossSpawned = false; // Reset boss flag
+  
+  // Start time tracking on first wave
+  if (gameState.wave === 1) {
+    gameState.gameStartTime = Date.now();
+    // Start background music
+    audio.startMusic(gameState.wave);
+  } else {
+    // Update music intensity for new wave
+    audio.updateMusicIntensity(gameState.wave);
+  }
+  
+  // Show wave banner
+  showWaveBanner();
+}
+
+function showUpgradesMenu() {
+  upgradesCoinsAmountEl.textContent = gameState.coins;
+  upgradesMenuEl.classList.add('show');
+  renderUpgrades();
+}
+
+function renderUpgrades() {
+  const upgrades = upgradeSystem.getAllUpgrades();
+  upgradesListEl.innerHTML = '';
+  
+  upgrades.forEach(upgrade => {
+    const upgradeDiv = document.createElement('div');
+    upgradeDiv.className = 'upgrade-item';
+    
+    const isMaxLevel = upgrade.level >= upgrade.maxLevel;
+    const canAfford = upgradeSystem.canAfford(upgrade.key, gameState.coins);
+    
+    let buttonHTML;
+    if (isMaxLevel) {
+      buttonHTML = '<button class="upgrade-btn max-level" disabled>MAX LEVEL</button>';
+    } else {
+      const buttonText = `BUY (${upgrade.currentCost} 💰)`;
+      const disabled = !canAfford ? 'disabled' : '';
+      buttonHTML = `<button class="upgrade-btn" ${disabled} data-upgrade="${upgrade.key}">${buttonText}</button>`;
+    }
+    
+    upgradeDiv.innerHTML = `
+      <div class="upgrade-header">
+        <div class="upgrade-name">${upgrade.name}</div>
+        <div class="upgrade-level">Lv ${upgrade.level}/${upgrade.maxLevel}</div>
+      </div>
+      <div class="upgrade-description">${upgrade.description}</div>
+      <div class="upgrade-stats">
+        <div class="upgrade-bonus">Current: ${formatBonus(upgrade.key, upgrade.currentBonus)}</div>
+        ${!isMaxLevel ? `<div class="upgrade-next">Next: ${formatBonus(upgrade.key, upgrade.nextBonus)}</div>` : ''}
+      </div>
+      ${buttonHTML}
+    `;
+    
+    upgradesListEl.appendChild(upgradeDiv);
+    
+    // Add event listener to buy button
+    if (!isMaxLevel) {
+      const buyBtn = upgradeDiv.querySelector('.upgrade-btn');
+      buyBtn.addEventListener('click', () => purchaseUpgrade(upgrade.key));
+    }
+  });
+}
+
+function formatBonus(upgradeKey, value) {
+  if (upgradeKey === 'fireRate') {
+    const level = upgradeSystem.upgrades.fireRate.level;
+    if (level === 0 && value === 0) {
+      return 'Pistol (Manual)';
+    } else if (level === 0) {
+      return 'Auto-Fire + 20%';
+    }
+    return `+${Math.round(value * 100)}%`;
+  } else if (upgradeKey === 'damage') {
+    return `+${value} DMG`;
+  } else if (upgradeKey === 'bulletSpeed') {
+    return `+${value} SPD`;
+  } else if (upgradeKey === 'maxHP') {
+    return `+${value} HP`;
+  }
+  return value;
+}
+
+function purchaseUpgrade(upgradeKey) {
+  const result = upgradeSystem.purchase(upgradeKey, gameState.coins);
+  
+  if (result.success) {
+    gameState.coins -= result.cost;
+    upgradesCoinsAmountEl.textContent = gameState.coins;
+    coinsEl.textContent = gameState.coins;
+    
+    // Apply upgrade effects
+    applyUpgrade(upgradeKey, result.newLevel);
+    
+    // Re-render upgrades
+    renderUpgrades();
+    
+    // Visual feedback
+    audio.playShoot(); // Reuse shoot sound for purchase
+  }
+}
+
+function applyUpgrade(upgradeKey, newLevel) {
+  if (upgradeKey === 'fireRate') {
+    const bonus = upgradeSystem.getUpgradeValue('fireRate');
+    player.shootInterval = (1.0 / CONFIG.FIRE_RATE) * (1 - bonus);
+    // Update weapon visual based on fire rate level
+    player.updateWeapon(newLevel);
+    // Camera shake feedback for weapon upgrade
+    gameState.cameraShake = 0.25;
+  } else if (upgradeKey === 'damage') {
+    // Damage is applied in collision detection
+  } else if (upgradeKey === 'bulletSpeed') {
+    // Bullet speed is used when spawning bullets
+  } else if (upgradeKey === 'maxHP') {
+    const bonus = upgradeSystem.getUpgradeValue('maxHP');
+    player.maxHP = CONFIG.PLAYER_MAX_HP + bonus;
+    // Heal player by the bonus amount
+    player.hp = Math.min(player.maxHP, player.hp + bonus);
+    player.updateHealthBar();
+    updatePlayerUI();
+  }
+}
+
+function showWaveBanner() {
+  waveBannerEl.textContent = `TASK: Eliminate all enemies!`;
+  waveBannerEl.style.background = 'linear-gradient(90deg, rgba(255,165,0,0.95), rgba(255,215,0,0.95))';
+  waveBannerEl.classList.add('show');
+  
+  setTimeout(() => {
+    waveBannerEl.classList.remove('show');
+  }, 3000);
+}
+
+function showWaveCompleteBanner() {
+  waveBannerEl.textContent = `WAVE ${gameState.wave - 1} COMPLETE! 🎉`;
+  waveBannerEl.style.background = 'linear-gradient(90deg, rgba(46,204,113,0.95), rgba(39,174,96,0.95))';
+  waveBannerEl.classList.add('show');
+  
+  setTimeout(() => {
+    waveBannerEl.classList.remove('show');
+  }, 2000);
+}
+
+function showBossBanner() {
+  waveBannerEl.textContent = `⚠️ BOSS INCOMING! ⚠️`;
+  waveBannerEl.style.background = 'linear-gradient(90deg, rgba(231,76,60,0.95), rgba(192,57,43,0.95))';
+  waveBannerEl.classList.add('show');
+  
+  setTimeout(() => {
+    waveBannerEl.classList.remove('show');
+  }, 3000);
+}
+
+function spawnEnemy(forceBoss = false) {
+  const enemy = enemyPool.get();
+  if (!enemy) return; // Pool exhausted
+  
+  const x = (Math.random() - 0.5) * (CONFIG.LANE_WIDTH - 2);
+  const z = -60;
+  const baseSpeed = getEnemySpeedForWave(gameState.wave);
+  const hp = getEnemyHPForWave(gameState.wave);
+  
+  // Apply difficulty multiplier to enemy speed
+  const difficultyMultiplier = difficultyMultipliers[gameSettings.difficulty];
+  const speed = baseSpeed * difficultyMultiplier;
+  
+  enemy.spawn(x, z, speed, hp, gameState.wave, forceBoss);
+  gameState.enemiesSpawnedThisWave++;
+  
+  // Spawn effect - bigger for bosses
+  const effectPos = new THREE.Vector3(x, 0.5, z);
+  spawnSpawnEffect(effectPos);
+  
+  // Boss announcement
+  if (forceBoss) {
+    showBossBanner();
+  }
+}
+
+function spawnSpawnEffect(position) {
+  for (let i = 0; i < 8; i++) {
+    const particle = particlePool.get();
+    if (particle) {
+      particle.spawn(position, 0x8B4789, 'explosion');
+    }
+  }
+}
+
+function findClosestEnemy() {
+  const activeEnemies = enemyPool.getActive();
+  if (activeEnemies.length === 0) return null;
+  
+  const playerPos = player.getPosition();
+  let closest = null;
+  let closestDist = Infinity;
+  
+  for (const enemy of activeEnemies) {
+    if (enemy.isDead) continue;
+    
+    const enemyPos = enemy.getPosition();
+    // Distance along the lane (Z-axis) is priority
+    const distZ = Math.abs(enemyPos.z - playerPos.z);
+    
+    if (distZ < closestDist) {
+      closestDist = distZ;
+      closest = enemy;
+    }
+  }
+  
+  return closest;
+}
+
+function shootBullet() {
+  if (!player.canShoot()) return;
+  if (!gameState.waveInProgress) return;
+  
+  const playerPos = player.getPosition();
+  
+  // Different shooting patterns based on weapon mode
+  switch(player.weaponMode) {
+    case 'shotgun':
+      // Shotgun: 5 bullets in a spread
+      for (let i = 0; i < 5; i++) {
+        const bullet = bulletPool.get();
+        if (!bullet) continue;
+        
+        const angle = (i - 2) * 0.15; // Spread angle
+        const offset = new THREE.Vector3(Math.sin(angle) * 0.3, 0, 0);
+        bullet.spawn(playerPos.clone().add(offset));
+        bullet.mesh.userData.angleOffset = angle; // Store angle for trajectory
+      }
+      // Shotgun has limited range
+      break;
+      
+    case 'laser':
+      // Laser: weak continuous beam (spawns as rapid small bullets)
+      const laserBullet = bulletPool.get();
+      if (!laserBullet) return;
+      laserBullet.spawn(playerPos);
+      laserBullet.mesh.scale.set(0.5, 0.5, 1.5); // Thinner, longer
+      laserBullet.mesh.material.color.setHex(0x00FFFF); // Cyan
+      laserBullet.mesh.material.emissive.setHex(0x0088FF);
+      break;
+      
+    case 'machinegun':
+      // Machine gun: normal bullet but rapid fire
+      const mgBullet = bulletPool.get();
+      if (!mgBullet) return;
+      mgBullet.spawn(playerPos);
+      mgBullet.mesh.material.color.setHex(0xFF6B00); // Orange
+      break;
+      
+    default:
+      // Normal bullet
+      const bullet = bulletPool.get();
+      if (!bullet) return;
+      bullet.spawn(playerPos);
+      break;
+  }
+  
+  player.resetShootTimer();
+  player.playShootAnimation();
+  audio.playShoot(player.weaponMode); // Pass weapon mode for correct sound
+  createMuzzleFlash(playerPos);
+}
+
+function createMuzzleFlash(position) {
+  const flashGeometry = new THREE.SphereGeometry(0.4, 8, 8);
+  const flashMaterial = new THREE.MeshBasicMaterial({ 
+    color: 0xFFD700,
+    transparent: true,
+    opacity: 0.8
+  });
+  const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+  flash.position.copy(position);
+  flash.position.y += 0.8;
+  flash.position.z += 0.5;
+  scene.add(flash);
+  
+  setTimeout(() => {
+    scene.remove(flash);
+  }, 50);
+}
+
+function spawnHitParticles(position) {
+  for (let i = 0; i < 6; i++) {
+    const particle = particlePool.get();
+    if (particle) {
+      particle.spawn(position, 0xFFFFFF, 'hit');
+    }
+  }
+}
+
+function spawnDeathParticles(position, enemyType = 'normal') {
+  // More particles for boss and elite enemies
+  let count = 10;
+  if (enemyType === 'boss') count = 25;
+  else if (enemyType === 'elite') count = 15;
+  else if (enemyType === 'tank') count = 12;
+  
+  for (let i = 0; i < count; i++) {
+    const particle = particlePool.get();
+    if (particle) {
+      let color;
+      if (enemyType === 'boss') {
+        // Boss explosion - red and golden mix
+        const r = Math.random();
+        if (r < 0.33) color = 0xFF0000;
+        else if (r < 0.66) color = 0xFFD700;
+        else color = 0xFF4444;
+      } else if (enemyType === 'elite') {
+        color = Math.random() < 0.5 ? 0xFF4444 : 0xFFFF00;
+      } else if (enemyType === 'fast') {
+        color = Math.random() < 0.5 ? 0x00CED1 : 0x00FFFF;
+      } else if (enemyType === 'tank') {
+        color = Math.random() < 0.5 ? 0x556B2F : 0x8B4513;
+      } else if (enemyType === 'scout') {
+        color = Math.random() < 0.5 ? 0x4488FF : 0x6699FF; // Blue tones for scout
+      } else {
+        color = Math.random() < 0.5 ? 0x8B4789 : 0xFF00FF;
+      }
+      particle.spawn(position, color, 'explosion');
+    }
+  }
+  
+  // Add coin sparkle particles
+  spawnCoinParticles(position);
+}
+
+function spawnCoinParticles(position) {
+  for (let i = 0; i < 5; i++) {
+    const particle = particlePool.get();
+    if (particle) {
+      particle.spawn(position, 0xFFD700, 'coin');
+    }
+  }
+}
+
+function spawnPowerUp() {
+  const powerUp = powerUpPool.get();
+  if (!powerUp) return;
+  
+  const x = (Math.random() - 0.5) * (CONFIG.LANE_WIDTH - 2);
+  const z = -60;
+  
+  // Random power-up type
+  const types = ['machinegun', 'laser', 'shotgun'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  
+  powerUp.spawn(x, z, type);
+  
+  // Spawn effect
+  const effectPos = new THREE.Vector3(x, 1.0, z);
+  for (let i = 0; i < 8; i++) {
+    const particle = particlePool.get();
+    if (particle) {
+      particle.spawn(effectPos, 0xFFD700, 'explosion');
+    }
+  }
+}
+
+function checkPowerUpPlayerCollisions() {
+  const activePowerUps = powerUpPool.getActive();
+  const playerPos = player.getPosition();
+  
+  for (const powerUp of activePowerUps) {
+    const powerUpPos = powerUp.getPosition();
+    const distance = powerUpPos.distanceTo(playerPos);
+    
+    if (distance < 2.0) {
+      // Collected!
+      player.activatePowerUp(powerUp.powerUpType);
+      powerUp.deactivate();
+      
+      // Collection effect
+      for (let i = 0; i < 15; i++) {
+        const particle = particlePool.get();
+        if (particle) {
+          particle.spawn(powerUpPos, 0xFFD700, 'coin');
+        }
+      }
+      
+      audio.playPowerupPickup(); // Special power-up pickup sound
+    }
+  }
+}
+
+function checkBulletEnemyCollisions() {
+  const activeBullets = bulletPool.getActive();
+  const activeEnemies = enemyPool.getActive();
+  
+  // Get current damage with upgrades
+  const damageBonus = upgradeSystem.getUpgradeValue('damage');
+  let totalDamage = CONFIG.BULLET_DAMAGE + damageBonus;
+  
+  // Weapon mode damage modifiers
+  if (player.weaponMode === 'laser') {
+    totalDamage *= 0.4; // Laser is weaker per hit
+  } else if (player.weaponMode === 'shotgun') {
+    totalDamage *= 1.5; // Shotgun pellets do more damage
+  }
+  
+  for (const bullet of activeBullets) {
+    for (const enemy of activeEnemies) {
+      if (enemy.isDead) continue;
+      
+      const bulletPos = bullet.getPosition();
+      const enemyPos = enemy.getPosition();
+      const distance = bulletPos.distanceTo(enemyPos);
+      
+      if (distance < (CONFIG.BULLET_COLLISION_RADIUS + CONFIG.ENEMY_COLLISION_RADIUS)) {
+        // Hit!
+        const killed = enemy.takeDamage(totalDamage);
+        bullet.deactivate();
+        
+        spawnHitParticles(enemyPos);
+        audio.playHit();
+        
+        if (killed) {
+          const enemyType = enemy.enemyType;
+          
+          enemy.playDeathAnimation(() => {
+            // Animation complete callback
+          });
+          
+          // Bonus coins for special enemies
+          let coinsEarned = CONFIG.COINS_PER_KILL;
+          if (enemyType === 'boss') coinsEarned *= 5; // Boss gives 5x coins!
+          else if (enemyType === 'elite') coinsEarned *= 3;
+          else if (enemyType === 'tank') coinsEarned *= 2;
+          else if (enemyType === 'fast') coinsEarned *= 1.5;
+          else if (enemyType === 'animated') coinsEarned *= 1.5;
+          else if (enemyType === 'scout') coinsEarned *= 0.75; // Scout gives less coins (weaker enemy)
+          
+          const earnedCoins = Math.floor(coinsEarned);
+          gameState.coins += earnedCoins;
+          gameSettings.totalCoins += earnedCoins; // Add to lifetime total for store
+          gameState.enemiesKilledThisWave++;
+          
+          spawnDeathParticles(enemyPos, enemyType);
+          audio.playEnemyDeath();
+          
+          // Bigger camera shake for boss and elite enemies
+          if (enemyType === 'boss') {
+            gameState.cameraShake = 0.5;
+          } else if (enemyType === 'elite') {
+            gameState.cameraShake = 0.3;
+          } else {
+            gameState.cameraShake = 0.15;
+          }
+        }
+        
+        break; // Bullet hit something, stop checking
+      }
+    }
+  }
+}
+
+function checkEnemyPlayerCollisions() {
+  const activeEnemies = enemyPool.getActive();
+  const playerPos = player.getPosition();
+  
+  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    const enemy = activeEnemies[i];
+    if (enemy.isDead) continue;
+    
+    // Check if enemy reached Bonkhouse's position
+    const enemyPos = enemy.getPosition();
+    const distance = enemyPos.distanceTo(playerPos);
+    
+    // Collision radius - when enemy gets close to Bonkhouse
+    if (distance < (CONFIG.PLAYER_COLLISION_RADIUS + CONFIG.ENEMY_COLLISION_RADIUS + 0.5)) {
+      // Enemy hit player
+      const dead = player.takeDamage(CONFIG.ENEMY_DAMAGE_TO_PLAYER);
+      enemy.deactivate();
+      
+      audio.playPlayerHit();
+      gameState.cameraShake = 0.4;
+      
+      if (dead) {
+        endGame();
+      }
+      
+      updatePlayerUI();
+    }
+  }
+}
+
+function updatePlayerUI() {
+  playerHPEl.textContent = Math.ceil(player.hp);
+  const healthPercent = (player.hp / player.maxHP) * 100;
+  playerHealthFillEl.style.width = healthPercent + '%';
+  
+  if (healthPercent < 30) {
+    playerHealthFillEl.style.background = 'linear-gradient(90deg, #e74c3c, #c0392b)';
+  } else if (healthPercent < 60) {
+    playerHealthFillEl.style.background = 'linear-gradient(90deg, #f39c12, #e67e22)';
+  }
+}
+
+function updateGame(deltaTime) {
+  if (gameState.isPaused || gameState.isGameOver) return;
+  
+  // Calculate player movement direction
+  let moveDirection = 0;
+  
+  // Keyboard input
+  if (input.left) moveDirection -= 1;
+  if (input.right) moveDirection += 1;
+  
+  // Touch/mouse input
+  if (input.touchStartX !== null && input.touchCurrentX !== null) {
+    const touchDiff = input.touchCurrentX - input.touchStartX;
+    const threshold = 5; // Minimum movement threshold
+    
+    if (Math.abs(touchDiff) > threshold) {
+      moveDirection = touchDiff > 0 ? 1 : -1;
+      // Update start position for continuous dragging
+      input.touchStartX = input.touchCurrentX;
+    }
+  }
+  
+  // Update player
+  player.update(deltaTime, moveDirection);
+  
+  // Update lane (water animation)
+  lane.update(deltaTime);
+  
+  // Update atmospheric effects (birds)
+  atmosphere.update(deltaTime);
+  
+  // Animate clouds slowly
+  if (clouds) {
+    clouds.rotation.y += deltaTime * 0.005; // Very slow rotation
+    clouds.children.forEach((cloud, i) => {
+      cloud.position.z += deltaTime * 2; // Drift forward
+      if (cloud.position.z > 20) {
+        cloud.position.z = -180; // Reset to back
+      }
+    });
+  }
+  
+  // Spawn enemies
+  if (gameState.waveInProgress) {
+    const maxEnemies = getEnemiesForWave(gameState.wave);
+    const activeEnemies = enemyPool.getActive().filter(e => !e.isDead).length;
+    
+    // Boss wave - spawn one boss at the start
+    if (gameState.wave % 5 === 0 && gameState.wave >= 5 && !gameState.bossSpawned) {
+      spawnEnemy(true); // Spawn boss
+      gameState.bossSpawned = true;
+    }
+    
+    // Spawn enemies gradually
+    if (gameState.enemiesSpawnedThisWave < maxEnemies) {
+      const spawnRate = 0.8; // Seconds between spawns
+      gameState.spawnTimer = (gameState.spawnTimer || 0) + deltaTime;
+      
+      if (gameState.spawnTimer >= spawnRate) {
+        spawnEnemy(false);
+        gameState.spawnTimer = 0;
+      }
+    }
+    
+    // Check if wave complete
+    if (gameState.enemiesSpawnedThisWave >= maxEnemies && activeEnemies === 0) {
+      // Wave complete!
+      gameState.waveInProgress = false;
+      gameState.wave++;
+      gameState.waveStartDelay = CONFIG.WAVE_START_DELAY;
+      waveEl.textContent = gameState.wave;
+      
+      // Show wave complete banner
+      showWaveCompleteBanner();
+      
+      setTimeout(() => {
+        startWaveBtn.textContent = `START WAVE ${gameState.wave}`;
+        // Show upgrades menu instead of start button
+        showUpgradesMenu();
+      }, 2000);
+    }
+  }
+  
+  // Shooting system - Manual pistol or auto machine gun (with upgrade)
+  const closestEnemy = findClosestEnemy();
+  const fireRateLevel = upgradeSystem.upgrades.fireRate.level;
+  
+  if (closestEnemy) {
+    // Level 0 = Manual pistol (shoot on input press)
+    // Level 1+ = Machine gun (auto-fire)
+    if (fireRateLevel === 0) {
+      // Pistol mode - only shoot when player presses shoot button
+      if (input.shoot && player.canShoot()) {
+        shootBullet();
+      }
+    } else {
+      // Machine gun mode - auto-fire
+      if (player.canShoot()) {
+        shootBullet();
+      }
+    }
+  }
+  
+  // Update bullets with speed bonus
+  const bulletSpeedBonus = upgradeSystem.getUpgradeValue('bulletSpeed');
+  bulletPool.getActive().forEach(bullet => bullet.update(deltaTime, bulletSpeedBonus));
+  
+  // Update enemies
+  enemyPool.getActive().forEach(enemy => enemy.update(deltaTime));
+  
+  // Update power-ups
+  powerUpPool.getActive().forEach(powerUp => powerUp.update(deltaTime));
+  
+  // Spawn power-ups randomly during wave
+  if (gameState.waveInProgress) {
+    gameState.powerUpSpawnTimer += deltaTime;
+    if (gameState.powerUpSpawnTimer >= 1.0) {
+      gameState.powerUpSpawnTimer = 0;
+      if (Math.random() < CONFIG.POWERUP_SPAWN_CHANCE) {
+        spawnPowerUp();
+      }
+    }
+  }
+  
+  // Update player power-up
+  const fireRateLevel = upgradeSystem.upgrades.fireRate.level;
+  const fireRateBonus = fireRateLevel * upgradeSystem.upgrades.fireRate.increment;
+  const powerUpEnded = player.updatePowerUp(deltaTime, fireRateBonus);
+  
+  // Play sound when power-up expires
+  if (powerUpEnded) {
+    audio.playHit(); // Subtle notification sound
+  }
+  
+  // Update particles
+  particlePool.getActive().forEach(particle => particle.update(deltaTime));
+  
+  // Check collisions
+  checkBulletEnemyCollisions();
+  checkEnemyPlayerCollisions();
+  checkPowerUpPlayerCollisions();
+  
+  // Camera shake
+  if (gameState.cameraShake > 0) {
+    const shakeX = (Math.random() - 0.5) * gameState.cameraShake;
+    const shakeY = (Math.random() - 0.5) * gameState.cameraShake;
+    camera.position.x = shakeX;
+    camera.position.y = 16 + shakeY;
+    gameState.cameraShake *= 0.9;
+    
+    if (gameState.cameraShake < 0.01) {
+      gameState.cameraShake = 0;
+      camera.position.x = 0;
+      camera.position.y = 16;
+    }
+  }
+  
+  // Update UI
+  coinsEl.textContent = gameState.coins;
+  
+  // Update power-up indicator
+  const powerUpTime = player.getPowerUpTimeRemaining();
+  if (powerUpTime > 0) {
+    powerUpIndicatorEl.style.display = 'block';
+    powerUpTimerEl.textContent = Math.ceil(powerUpTime);
+    
+    const powerUpNames = {
+      'machinegun': '🔫 MACHINE GUN',
+      'laser': '⚡ LASER BEAM',
+      'shotgun': '💥 SHOTGUN'
+    };
+    powerUpNameEl.textContent = powerUpNames[player.weaponMode] || player.weaponMode.toUpperCase();
+    
+    // Flash red when time is running out
+    if (powerUpTime < 3) {
+      const flashAlpha = Math.sin(Date.now() * 0.01) * 0.5 + 0.5;
+      powerUpIndicatorEl.style.backgroundColor = `rgba(231, 76, 60, ${0.5 + flashAlpha * 0.3})`;
+      powerUpIndicatorEl.style.borderColor = '#e74c3c';
+      powerUpIndicatorEl.style.border = '2px solid #e74c3c';
+    } else {
+      powerUpIndicatorEl.style.backgroundColor = 'rgba(0,0,0,0.7)';
+      powerUpIndicatorEl.style.border = 'none';
+    }
+  } else {
+    powerUpIndicatorEl.style.display = 'none';
+  }
+  
+  // Update debug info if visible
+  if (debugInfoEl.classList.contains('show')) {
+    const playerPos = player.getPosition();
+    debugPlayerPosEl.textContent = `${playerPos.x.toFixed(1)}, ${playerPos.y.toFixed(1)}, ${playerPos.z.toFixed(1)}`;
+    debugCameraPosEl.textContent = `${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)}`;
+    debugEnemiesEl.textContent = enemyPool.getActive().length;
+    debugBulletsEl.textContent = bulletPool.getActive().length;
+  }
+}
+
+function togglePause() {
+  gameState.isPaused = !gameState.isPaused;
+  pauseMenuEl.classList.toggle('show');
+}
+
+function endGame() {
+  gameState.isGameOver = true;
+  gameState.survivalTime = (Date.now() - gameState.gameStartTime) / 1000;
+  
+  finalWaveEl.textContent = gameState.wave;
+  finalCoinsEl.textContent = gameState.coins;
+  finalTimeEl.textContent = formatTime(gameState.survivalTime);
+  
+  // Stop background music
+  audio.stopMusic();
+  
+  // Save total coins to localStorage
+  saveSettings();
+  
+  // Save high score and check if it's a new record
+  const isNewHighScore = saveHighScore(gameState.wave, gameState.survivalTime, gameState.coins);
+  if (isNewHighScore) {
+    newHighScoreMsgEl.style.display = 'block';
+  } else {
+    newHighScoreMsgEl.style.display = 'none';
+  }
+  
+  gameOverEl.classList.add('show');
+}
+
+function restartGame() {
+  // Stop music
+  audio.stopMusic();
+  
+  // Reset game state
+  gameState = {
+    wave: 1,
+    coins: 0,
+    enemiesSpawnedThisWave: 0,
+    enemiesKilledThisWave: 0,
+    waveInProgress: false,
+    waveStartDelay: 0,
+    isPaused: false,
+    isGameOver: false,
+    cameraShake: 0,
+    spawnTimer: 0,
+    bossSpawned: false,
+    survivalTime: 0,
+    gameStartTime: Date.now(),
+    powerUpSpawnTimer: 0
+  };
+  
+  // Clear pools
+  bulletPool.deactivateAll();
+  enemyPool.deactivateAll();
+  particlePool.deactivateAll();
+  powerUpPool.deactivateAll();
+  
+  // Reset player
+  player.hp = player.maxHP;
+  player.updateHealthBar();
+  player.shootTimer = 0;
+  player.weaponMode = 'normal';
+  player.powerUpTimer = 0;
+  
+  // Reset upgrades
+  upgradeSystem.upgrades.fireRate.level = 0;
+  upgradeSystem.upgrades.damage.level = 0;
+  upgradeSystem.upgrades.bulletSpeed.level = 0;
+  upgradeSystem.upgrades.maxHP.level = 0;
+  player.shootInterval = 1.0 / CONFIG.FIRE_RATE;
+  player.maxHP = CONFIG.PLAYER_MAX_HP;
+  
+  // Update UI
+  waveEl.textContent = gameState.wave;
+  coinsEl.textContent = gameState.coins;
+  updatePlayerUI();
+  
+  startWaveBtn.textContent = 'START WAVE 1';
+  startWaveBtn.classList.add('show');
+  gameOverEl.classList.remove('show');
+  upgradesMenuEl.classList.remove('show');
+  
+  // Reset camera
+  camera.position.set(0, 14, 8);
+}
+
+// Animation loop
+let lastTime = 0;
+function animate(currentTime) {
+  requestAnimationFrame(animate);
+  
+  const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.1);
+  lastTime = currentTime;
+  
+  updateGame(deltaTime);
+  
+  renderer.render(scene, camera);
+}
+
+animate(0);

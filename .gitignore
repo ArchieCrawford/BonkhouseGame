@@ -1,0 +1,80 @@
+# === OS / Editor ===
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+.vscode/
+!.vscode/extensions.json
+
+*.swp
+*.swo
+*~
+
+# === Logs / temp ===
+*.log
+*.tmp
+tmp/
+temp/
+
+# === Dependencies / build outputs (in case you add tooling later) ===
+node_modules/
+dist/
+build/
+out/
+coverage/
+
+# === Local secrets / env ===
+.env
+.env.*
+
+# === Source art / authoring files (keep exported runtime assets tracked) ===
+# Ignore common art-source formats wherever they live
+*.psd
+*.psb
+*.xcf
+*.kra
+*.ase
+*.aseprite
+*.ai
+*.indd
+*.sketch
+*.fig
+*.blend
+*.blend1
+*.fbx
+*.obj
+*.mtl
+*.ztl
+*.spp
+*.sbs
+*.sbsar
+*.tif
+*.tiff
+*.wav
+*.aif
+*.aiff
+
+# Common "work" folders (keep your shipped /assets/ folder intact)
+art/
+Art/
+ART/
+raw/
+Raw/
+RAW/
+source_art/
+source-assets/
+source_assets/
+wip/
+WIP/
+
+# If you keep raw/source inside assets, ignore only those subfolders
+assets/raw/
+assets/source/
+assets/wip/
+
+# === Misc ===
+*.bak
+*.old
+*.orig
