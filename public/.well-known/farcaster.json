@@ -1,14 +1,14 @@
 {
   "frame": {
-    "name": "Bonkhouse",
+    "name": "BonkHouse",
     "version": "1",
-    "iconUrl": "https://bonkhouse.netlify.app/.well-known/farcaster.json/icon.png",
-    "homeUrl": "https://bonkhouse.netlify.app/.well-known/farcaster.json",
-    "imageUrl": "https://bonkhouse.netlify.app/.well-known/farcaster.json/image.png",
+    "iconUrl": "https://bonkhouse.netlify.app/icon.png",
+    "homeUrl": "https://bonkhouse.netlify.app/hero.png",
+    "imageUrl": "https://bonkhouse.netlify.app/image.png",
     "buttonTitle": "Play Bonkhouse",
-    "splashImageUrl": "https://bonkhouse.netlify.app/.well-known/farcaster.json/splash.png",
+    "splashImageUrl": "https://bonkhouse.netlify.app/splash.png",
     "splashBackgroundColor": "#8E1C0B",
-    "webhookUrl": "https://bonkhouse.netlify.app/.well-known/farcaster.json/api/webhook",
+    "webhookUrl": "https://bonkhouse.netlify.app/api/webhook",
     "subtitle": "Defend the Lane. Protect the House",
     "description": "One House. One Hero. Endless Waves",
     "primaryCategory": "games",
@@ -23,10 +23,10 @@
       "action",
       "arcade"
     ],
-    "castShareUrl": "https://bonkhouse.netlify.app/og.png",
-    "ogImageUrl": "https://bonkhouse.netlify.app/og-image.png",
-    "ogDescription": "A fast lane shooter where Bonkhouse stands alone. Hold the line and survive endless waves.",
     "tagline": "Defend the Lane. Hold Fast.",
-    "ogTitle": "Bonkhouse — Defend the Lane"
+    "ogTitle": "Bonkhouse — Defend the Lane",
+    "ogDescription": "A fast lane shooter where Bonkhouse stands alone. Hold the line and survive endless waves.",
+    "castShareUrl": "https://bonkhouse.netlify.app/og.png",
+    "ogImageUrl": "https://bonkhouse.netlify.app/og-image.png"
   }
 }
