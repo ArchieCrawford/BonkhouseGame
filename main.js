@@ -1549,7 +1549,6 @@ function updateGame(deltaTime) {
   }
   
   // Update player power-up
-  const fireRateLevel = upgradeSystem.upgrades.fireRate.level;
   const fireRateBonus = fireRateLevel * upgradeSystem.upgrades.fireRate.increment;
   const powerUpEnded = player.updatePowerUp(deltaTime, fireRateBonus);
   
