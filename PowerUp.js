@@ -1,5 +1,11 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CONFIG } from './config.js';
+
+const POWERUP_MODELS = {
+  shotgun: { url: '/public/shotgun.glb', scale: 0.7 },
+  laser: { url: '/public/lazer.glb', scale: 0.7 }
+};
 
 export class PowerUp {
   constructor(scene, pool) {
@@ -11,6 +17,13 @@ export class PowerUp {
     this.group = new THREE.Group();
     this.group.visible = false;
     scene.add(this.group);
+
+    this.loader = new GLTFLoader();
+    this.modelGroup = new THREE.Group();
+    this.modelGroup.visible = false;
+    this.group.add(this.modelGroup);
+    this.typeModels = {};
+    this.typeLoading = {};
     
     // Base shape - floating box
     const geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
@@ -83,6 +96,63 @@ export class PowerUp {
         this.ring.material.color.setHex(0xFF0000);
         break;
     }
+
+    this.loadModelForType(type);
+    this.setActiveModel(type);
+  }
+
+  loadModelForType(type) {
+    const config = POWERUP_MODELS[type];
+    if (!config || this.typeModels[type] || this.typeLoading[type]) return;
+    
+    this.typeLoading[type] = true;
+    this.loader.load(
+      config.url,
+      (gltf) => {
+        const model = gltf.scene;
+        model.scale.setScalar(config.scale);
+        model.position.set(0, 0, 0);
+        model.visible = false;
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        
+        this.modelGroup.add(model);
+        this.typeModels[type] = model;
+        this.typeLoading[type] = false;
+        
+        if (this.active && this.powerUpType === type) {
+          this.setActiveModel(type);
+        }
+      },
+      undefined,
+      (error) => {
+        console.error(`Error loading ${type} power-up model:`, error);
+        this.typeLoading[type] = false;
+      }
+    );
+  }
+
+  setActiveModel(type) {
+    let hasModel = false;
+    Object.entries(this.typeModels).forEach(([key, model]) => {
+      const isActive = key === type;
+      model.visible = isActive;
+      if (isActive) hasModel = true;
+    });
+    
+    if (hasModel) {
+      this.modelGroup.visible = true;
+      this.mesh.visible = false;
+      this.iconMesh.visible = false;
+    } else {
+      this.modelGroup.visible = false;
+      this.mesh.visible = true;
+      this.iconMesh.visible = true;
+    }
   }
   
   update(deltaTime) {
@@ -96,10 +166,13 @@ export class PowerUp {
     // Rotate the power-up
     this.mesh.rotation.y += this.rotationSpeed * deltaTime;
     this.mesh.rotation.x = Math.sin(this.time * 2) * 0.2;
+    this.modelGroup.rotation.y += this.rotationSpeed * deltaTime;
+    this.modelGroup.rotation.x = Math.sin(this.time * 2) * 0.2;
     
     // Bob up and down
     const bobOffset = Math.sin(this.time * this.bobSpeed) * this.bobAmount;
     this.mesh.position.y = bobOffset;
+    this.modelGroup.position.y = bobOffset;
     
     // Pulse the ring
     const scale = 1 + Math.sin(this.time * 4) * 0.2;
