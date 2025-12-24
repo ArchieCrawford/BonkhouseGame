@@ -1198,6 +1198,8 @@ function completeWave() {
   if (!gameState.waveInProgress) return;
   
   gameState.waveInProgress = false;
+  powerUpPool.deactivateAll();
+  gameState.powerUpSpawnTimer = 0;
   gameState.wave++;
   gameState.waveStartDelay = CONFIG.WAVE_START_DELAY;
   waveEl.textContent = gameState.wave;
@@ -1613,6 +1615,9 @@ function updateGame(deltaTime) {
     const activeEnemies = enemyPool.getActive().filter(e => !e.isDead).length;
     if (activeEnemies > 0) {
       gameState.lastEnemySeenTime = now;
+    } else {
+      powerUpPool.deactivateAll();
+      gameState.powerUpSpawnTimer = 0;
     }
     
     // Boss wave - spawn one boss at the start

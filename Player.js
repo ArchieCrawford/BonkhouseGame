@@ -7,7 +7,10 @@ export class Player {
   constructor(scene) {
     this.scene = scene;
     this.group = new THREE.Group();
-    this.group.position.set(0, 0, -5); // Bottom of lane, on the street
+    this.baseX = 0;
+    this.baseY = 0;
+    this.baseZ = -5;
+    this.group.position.set(this.baseX, this.baseY, this.baseZ); // Bottom of lane, on the street
     
     // Health
     this.maxHP = CONFIG.PLAYER_MAX_HP;
@@ -321,10 +324,16 @@ export class Player {
     
     // Gentle breathing bob (subtle)
     const breathe = Math.sin(this.time * CONFIG.PLAYER_IDLE_BOB_SPEED) * CONFIG.PLAYER_IDLE_BOB_AMOUNT;
-    this.group.position.y = breathe;
+    this.group.position.y = this.baseY + breathe;
+    this.group.position.z = this.baseZ;
     
     // Bounce arrow indicator
     this.arrow.position.y = 4.5 + Math.sin(this.time * 3) * 0.2;
+    
+    if (this.model) {
+      this.model.position.x = 0;
+      this.model.position.z = 0;
+    }
     
     // Horizontal movement
     if (moveDirection !== 0) {
