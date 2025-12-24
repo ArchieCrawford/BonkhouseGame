@@ -4,27 +4,27 @@
     "payload": "eyJkb21haW4iOiJib25raG91c2UubmV0bGlmeS5hcHAifQ",
     "signature": "YJ0GRlzlZhl/xqGe86CBv9EitXho6hDmFkEsI3bxzT0hTqBt4ZeicII1e8H1chxWjhT0JemdRbONVrpXDOPTshs="
   },
-  "frame": {
+  "miniapp": {
     "name": "Bonkhouse",
     "version": "1",
-    "iconUrl": "https://bonkhouse.netlify.app/icon.png",
+    "iconUrl": "https://bonkhouse.netlify.app/icon-1024-noalpha.png",
     "homeUrl": "https://bonkhouse.netlify.app/",
-    "imageUrl": "https://bonkhouse.netlify.app/image.png",
+    "imageUrl": "https://bonkhouse.netlify.app/image-1500x1000.png",
     "buttonTitle": "Play Bonkhouse",
-    "splashImageUrl": "https://bonkhouse.netlify.app/Splash.png",
+    "splashImageUrl": "https://bonkhouse.netlify.app/splash-200.png",
     "splashBackgroundColor": "#8E1C0B",
-    "subtitle": "Defend the Lane. Protect.",
-    "description": "One House. One Hero. Endless Waves",
+    "subtitle": "Defend the Lane. Hold Fast.",
+    "description": "One House. One Hero. Endless Waves.",
     "primaryCategory": "games",
     "screenshotUrls": [
-      "https://bonkhouse.netlify.app/Screenshot1.png",
-      "https://bonkhouse.netlify.app/Screenshot2.png"
+      "https://bonkhouse.netlify.app/screenshot1-1284x2778.png",
+      "https://bonkhouse.netlify.app/screenshot2-1284x2778.png"
     ],
-    "heroImageUrl": "https://bonkhouse.netlify.app/hero.png",
+    "heroImageUrl": "https://bonkhouse.netlify.app/og-1200x630.png",
+    "ogImageUrl": "https://bonkhouse.netlify.app/og-1200x630.png",
     "tags": [
       "bonkhouse",
       "games",
-      "shooter",
       "action",
       "arcade"
     ],
