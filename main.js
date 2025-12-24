@@ -10,11 +10,46 @@ import { AudioManager } from './AudioManager.js';
 import { UpgradeSystem } from './UpgradeSystem.js';
 import { AtmosphericEffects } from './AtmosphericEffects.js';
 import { CONFIG } from './config.js';
-import { actions } from "https://esm.sh/@farcaster/miniapp-sdk";
+import * as farcaster from "https://esm.sh/@farcaster/miniapp-sdk";
 
-window.addEventListener("load", () => {
-  actions.ready();
-});
+const farcasterSdk = farcaster.sdk || farcaster.default || farcaster;
+const farcasterActions = farcasterSdk.actions || farcaster.actions;
+const farcasterContext = farcasterSdk.context || farcaster.context;
+
+const signalFarcasterReady = () => {
+  const readyFn = farcasterActions?.ready || farcasterSdk?.actions?.ready;
+  if (typeof readyFn !== "function") return;
+  try {
+    const result = readyFn();
+    if (result && typeof result.catch === "function") {
+      result.catch(() => {});
+    }
+  } catch (err) {
+    console.warn("Farcaster ready() failed:", err);
+  }
+};
+
+const storeFarcasterContext = (ctx) => {
+  if (ctx) {
+    window.farcasterContext = ctx;
+  }
+};
+
+signalFarcasterReady();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", signalFarcasterReady, { once: true });
+}
+window.addEventListener("load", signalFarcasterReady, { once: true });
+
+if (farcasterContext) {
+  if (typeof farcasterContext.get === "function") {
+    farcasterContext.get().then(storeFarcasterContext).catch(() => {});
+  } else if (typeof farcasterContext.watch === "function") {
+    farcasterContext.watch(storeFarcasterContext);
+  } else {
+    storeFarcasterContext(farcasterContext);
+  }
+}
 
 
 // Scene setup
