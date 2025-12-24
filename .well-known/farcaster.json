@@ -3,10 +3,8 @@
     "header": "eyJmaWQiOjExNDM3NDIsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHg5OTAzNDBkYTlFZDBGOTZDMTQxODU5ODFmRTdmNzQwZDE4NEZmNkMzIn0",
     "payload": "eyJkb21haW4iOiJib25raG91c2UubmV0bGlmeS5hcHAifQ",
     "signature": "YJ0GRlzlZhl/xqGe86CBv9EitXho6hDmFkEsI3bxzT0hTqBt4ZeicII1e8H1chxWjhT0JemdRbONVrpXDOPTshs="
-  }
-}
-{
-    "frame": {
+  },
+  "frame": {
     "name": "BonkHouse",
     "version": "1",
     "iconUrl": "https://bonkhouse.netlify.app/icon.png",
