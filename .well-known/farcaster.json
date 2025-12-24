@@ -1,21 +1,26 @@
 {
+  "accountAssociation": {
+    "header": "eyJmaWQiOjExNDM3NDIsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHg5OTAzNDBkYTlFZDBGOTZDMTQxODU5ODFmRTdmNzQwZDE4NEZmNkMzIn0",
+    "payload": "eyJkb21haW4iOiJib25raG91c2UubmV0bGlmeS5hcHAifQ",
+    "signature": "YJ0GRlzlZhl/xqGe86CBv9EitXho6hDmFkEsI3bxzT0hTqBt4ZeicII1e8H1chxWjhT0JemdRbONVrpXDOPTshs="
+  },
   "frame": {
     "name": "Bonkhouse",
     "version": "1",
-    "iconUrl": "https://bonkhouse.netlify.app/public/icon.png",
+    "iconUrl": "https://bonkhouse.netlify.app/icon.png",
     "homeUrl": "https://bonkhouse.netlify.app/",
-    "imageUrl": "https://bonkhouse.netlify.app/public/image.png",
+    "imageUrl": "https://bonkhouse.netlify.app/image.png",
     "buttonTitle": "Play Bonkhouse",
-    "splashImageUrl": "https://bonkhouse.netlify.app/public/Splash.png",
+    "splashImageUrl": "https://bonkhouse.netlify.app/Splash.png",
     "splashBackgroundColor": "#8E1C0B",
     "subtitle": "Defend the Lane. Protect the House",
     "description": "One House. One Hero. Endless Waves",
     "primaryCategory": "games",
     "screenshotUrls": [
-      "https://bonkhouse.netlify.app/public/Screenshot1.png",
-      "https://bonkhouse.netlify.app/public/Screenshot2.png"
+      "https://bonkhouse.netlify.app/Screenshot1.png",
+      "https://bonkhouse.netlify.app/Screenshot2.png"
     ],
-    "heroImageUrl": "https://bonkhouse.netlify.app/public/hero.png",
+    "heroImageUrl": "https://bonkhouse.netlify.app/hero.png",
     "tags": [
       "bonkhouse",
       "games",
