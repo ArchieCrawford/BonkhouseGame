@@ -75,6 +75,13 @@ const updateIdentityUI = () => {
   }
 };
 
+const updateWalletIdentity = (address, chainId) => {
+  gameSettings.walletAddress = address;
+  gameSettings.walletChainId = chainId;
+  gameSettings.walletSource = 'farcaster';
+  saveSettings();
+};
+
 const applyFarcasterIdentity = (ctx) => {
   const user = extractFarcasterUser(ctx);
   const fid = user?.fid ?? user?.id ?? null;
@@ -199,6 +206,35 @@ const getFarcasterWalletProvider = async () => {
   }
   
   return null;
+};
+
+const refreshWalletIdentity = async (forcePrompt = false) => {
+  const provider = await getFarcasterWalletProvider();
+  if (!provider) return false;
+  
+  let accounts = [];
+  try {
+    const method = forcePrompt ? 'eth_requestAccounts' : 'eth_accounts';
+    accounts = await provider.request({ method });
+  } catch (err) {
+    if (forcePrompt) {
+      showTipToast('Wallet connection cancelled.');
+    }
+    return false;
+  }
+  
+  const address = accounts?.[0];
+  if (!address) return false;
+  
+  let chainId = null;
+  try {
+    chainId = normalizeChainId(await provider.request({ method: 'eth_chainId' }));
+  } catch (err) {
+    console.warn('Unable to read chainId for wallet identity:', err);
+  }
+  
+  updateWalletIdentity(address, chainId);
+  return true;
 };
 
 const sendUsdcTip = async (provider, amount) => {
@@ -381,6 +417,8 @@ if (farcasterContext) {
     storeFarcasterContext(farcasterContext);
   }
 }
+
+refreshWalletIdentity(false);
 
 
 // Scene setup
@@ -626,6 +664,9 @@ let gameSettings = {
   playerDisplayName: null,
   playerPfpUrl: null,
   identitySource: 'guest',
+  walletAddress: null,
+  walletChainId: null,
+  walletSource: null,
   difficulty: 'medium',
   totalCoins: 0 // Lifetime coins for store purchases
 };
@@ -939,6 +980,9 @@ function saveSettings() {
   gameSettings.playerDisplayName = gameSettings.playerDisplayName || currentSettings.playerDisplayName || null;
   gameSettings.playerPfpUrl = gameSettings.playerPfpUrl || currentSettings.playerPfpUrl || null;
   gameSettings.identitySource = gameSettings.identitySource || currentSettings.identitySource || 'guest';
+  gameSettings.walletAddress = gameSettings.walletAddress || currentSettings.walletAddress || null;
+  gameSettings.walletChainId = gameSettings.walletChainId || currentSettings.walletChainId || null;
+  gameSettings.walletSource = gameSettings.walletSource || currentSettings.walletSource || null;
   gameSettings.totalCoins = currentSettings.totalCoins || gameSettings.totalCoins || 0;
   localStorage.setItem('bonkhouseSettings', JSON.stringify(gameSettings));
   updateIdentityUI();
@@ -956,13 +1000,19 @@ function updateDifficultyButtons() {
 // Leaderboard System
 function saveHighScore(wave, time, coins) {
   const leaderboard = getLeaderboard();
+  const walletAddress = gameSettings.walletAddress || null;
+  const walletChainId = gameSettings.walletChainId || null;
+  const playerId = walletAddress ? `wallet:${walletAddress}` : gameSettings.playerId;
   const score = {
     name: gameSettings.playerName,
-    playerId: gameSettings.playerId,
+    playerId,
     fid: gameSettings.playerFid,
     displayName: gameSettings.playerDisplayName,
     pfpUrl: gameSettings.playerPfpUrl,
     identitySource: gameSettings.identitySource,
+    walletAddress,
+    walletChainId,
+    walletSource: gameSettings.walletSource,
     wave: wave,
     time: time,
     coins: coins,
@@ -1008,7 +1058,10 @@ function displayLeaderboard() {
     entry.className = 'leaderboard-entry' + (index < 3 ? ' top3' : '');
     
     const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-    const displayName = score.name || score.displayName || 'Player';
+    const walletLabel = score.walletAddress
+      ? `${score.walletAddress.slice(0, 6)}...${score.walletAddress.slice(-4)}`
+      : null;
+    const displayName = score.name || score.displayName || walletLabel || 'Player';
     
     entry.innerHTML = `
       <div class="leaderboard-rank">${rankEmoji}</div>
@@ -1085,6 +1138,9 @@ playBtnEl.addEventListener('click', () => {
   audio.init();
   mainMenuEl.classList.remove('show');
   startWaveBtn.classList.add('show');
+  if (!gameSettings.walletAddress) {
+    refreshWalletIdentity(true);
+  }
 });
 
 settingsBtnEl.addEventListener('click', () => {
