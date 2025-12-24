@@ -17,10 +17,15 @@ const farcasterActions = farcasterSdk.actions || farcaster.actions;
 const farcasterContext = farcasterSdk.context || farcaster.context;
 let pendingFarcasterContext = null;
 let gameSettingsReady = false;
-const TIP_OPTIONS = [
-  { label: 'USDC (SOL)', address: 'DbX8NV1SZdWzYLDoexVLXUd8pZZ6fSx4CeusLPdvk8VP' },
-  { label: 'USDC (ETH)', address: '0x21cB408a394b24153b8164bdb09F508f741737c0' }
-];
+const TIP_RECIPIENT_SOL = 'DbX8NV1SZdWzYLDoexVLXUd8pZZ6fSx4CeusLPdvk8VP';
+const TIP_RECIPIENT_EVM = '0x21cB408a394b24153b8164bdb09F508f741737c0';
+const TIP_AMOUNTS = [1, 5, 10];
+const USDC_DECIMALS = 6n;
+const USDC_CONTRACTS = {
+  '0x1': { label: 'Ethereum', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' },
+  '0xa': { label: 'Optimism', address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85' },
+  '0x2105': { label: 'Base', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' }
+};
 
 const signalFarcasterReady = () => {
   const readyFn = farcasterActions?.ready || farcasterSdk?.actions?.ready;
@@ -149,11 +154,103 @@ const showTipToast = (message) => {
   }, 2000);
 };
 
-const getTipOptions = () => TIP_OPTIONS
+const getTipOptions = () => [
+  { label: 'USDC (SOL)', address: TIP_RECIPIENT_SOL },
+  { label: 'USDC (ETH)', address: TIP_RECIPIENT_EVM }
+]
   .map((option) => ({ ...option, address: option.address.trim() }))
   .filter((option) => option.address.length > 0);
 
 let tipOverlayEl = null;
+
+const isValidEvmAddress = (address) => /^0x[0-9a-fA-F]{40}$/.test(address);
+
+const encodeErc20Transfer = (recipient, amount) => {
+  const cleanRecipient = recipient.toLowerCase().replace(/^0x/, '').padStart(64, '0');
+  const amountHex = amount.toString(16).padStart(64, '0');
+  return `0xa9059cbb${cleanRecipient}${amountHex}`;
+};
+
+const normalizeChainId = (chainId) => {
+  if (typeof chainId === 'number') {
+    return `0x${chainId.toString(16)}`;
+  }
+  if (typeof chainId === 'string') {
+    return chainId.startsWith('0x') ? chainId : `0x${parseInt(chainId, 10).toString(16)}`;
+  }
+  return null;
+};
+
+const getFarcasterWalletProvider = async () => {
+  const wallet = farcasterSdk?.wallet || farcasterSdk?.actions?.wallet || farcasterActions?.wallet;
+  const candidates = [
+    wallet?.getEthereumProvider?.(),
+    wallet?.getProvider?.(),
+    wallet?.ethereumProvider,
+    farcasterSdk?.getEthereumProvider?.()
+  ];
+  
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const provider = await Promise.resolve(candidate);
+    if (provider?.request) {
+      return provider;
+    }
+  }
+  
+  return null;
+};
+
+const sendUsdcTip = async (provider, amount) => {
+  if (!isValidEvmAddress(TIP_RECIPIENT_EVM)) {
+    showTipToast('Tip wallet not set yet.');
+    return;
+  }
+  
+  let chainId = null;
+  try {
+    chainId = normalizeChainId(await provider.request({ method: 'eth_chainId' }));
+  } catch (err) {
+    console.warn('Unable to read chainId for tips:', err);
+  }
+  
+  const contract = USDC_CONTRACTS[chainId];
+  if (!contract) {
+    showTipToast('Switch wallet to Ethereum, Base, or Optimism for USDC tips.');
+    return;
+  }
+  
+  let from = null;
+  try {
+    const accounts = await provider.request({ method: 'eth_requestAccounts' });
+    from = accounts?.[0] || null;
+  } catch (err) {
+    showTipToast('Wallet connection cancelled.');
+    return;
+  }
+  
+  if (!from) {
+    showTipToast('Wallet not connected.');
+    return;
+  }
+  
+  const amountBaseUnits = BigInt(amount) * (10n ** USDC_DECIMALS);
+  const data = encodeErc20Transfer(TIP_RECIPIENT_EVM, amountBaseUnits);
+  const tx = {
+    from,
+    to: contract.address,
+    data,
+    value: '0x0'
+  };
+  
+  try {
+    await provider.request({ method: 'eth_sendTransaction', params: [tx] });
+    showTipToast(`Tip sent: ${amount} USDC`);
+  } catch (err) {
+    console.warn('Tip transaction failed:', err);
+    showTipToast('Tip cancelled.');
+  }
+};
 
 const copyTipAddress = (option) => {
   const fallbackMessage = `Send ${option.label} to ${option.address}`;
@@ -174,7 +271,7 @@ const closeTipOverlay = () => {
   }
 };
 
-const showTipMenu = (options) => {
+const showTipMenu = (titleText, actions) => {
   closeTipOverlay();
   const overlay = document.createElement('div');
   overlay.style.cssText = `
@@ -204,7 +301,7 @@ const showTipMenu = (options) => {
   `;
 
   const title = document.createElement('div');
-  title.textContent = 'TIP USDC';
+  title.textContent = titleText;
   title.style.cssText = `
     font-size: 24px;
     color: #FFD700;
@@ -213,14 +310,14 @@ const showTipMenu = (options) => {
   `;
   panel.appendChild(title);
 
-  options.forEach((option) => {
+  actions.forEach((action) => {
     const button = document.createElement('button');
     button.className = 'menu-btn secondary';
-    button.textContent = option.label;
+    button.textContent = action.label;
     button.style.width = '100%';
-    button.addEventListener('click', () => {
-      copyTipAddress(option);
+    button.addEventListener('click', async () => {
       closeTipOverlay();
+      await action.onClick();
     });
     panel.appendChild(button);
   });
@@ -237,17 +334,36 @@ const showTipMenu = (options) => {
   tipOverlayEl = overlay;
 };
 
-const handleTipClick = () => {
+const showTipWalletMenu = (provider) => {
+  const actions = TIP_AMOUNTS.map((amount) => ({
+    label: `TIP ${amount} USDC`,
+    onClick: () => sendUsdcTip(provider, amount)
+  }));
+  
+  showTipMenu('TIP USDC (FARCASTER WALLET)', actions);
+};
+
+const showTipCopyMenu = (options) => {
+  const actions = options.map((option) => ({
+    label: `COPY ${option.label}`,
+    onClick: () => copyTipAddress(option)
+  }));
+  showTipMenu('COPY TIP ADDRESS', actions);
+};
+
+const handleTipClick = async () => {
+  const provider = await getFarcasterWalletProvider();
+  if (provider) {
+    showTipWalletMenu(provider);
+    return;
+  }
+  
   const options = getTipOptions();
   if (!options.length) {
     showTipToast('Tip wallet not set yet.');
     return;
   }
-  if (options.length === 1) {
-    copyTipAddress(options[0]);
-    return;
-  }
-  showTipMenu(options);
+  showTipCopyMenu(options);
 };
 
 signalFarcasterReady();
