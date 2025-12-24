@@ -17,8 +17,10 @@ const farcasterActions = farcasterSdk.actions || farcaster.actions;
 const farcasterContext = farcasterSdk.context || farcaster.context;
 let pendingFarcasterContext = null;
 let gameSettingsReady = false;
-const TIP_USDC_ADDRESS = ''; // TODO: set your USDC wallet address to enable tips.
-const TIP_LABEL = 'USDC';
+const TIP_OPTIONS = [
+  { label: 'USDC (SOL)', address: 'DbX8NV1SZdWzYLDoexVLXUd8pZZ6fSx4CeusLPdvk8VP' },
+  { label: 'USDC (ETH)', address: '0x21cB408a394b24153b8164bdb09F508f741737c0' }
+];
 
 const signalFarcasterReady = () => {
   const readyFn = farcasterActions?.ready || farcasterSdk?.actions?.ready;
@@ -147,22 +149,105 @@ const showTipToast = (message) => {
   }, 2000);
 };
 
-const handleTipClick = () => {
-  const address = TIP_USDC_ADDRESS.trim();
-  if (!address) {
-    showTipToast('Tip wallet not set yet.');
-    return;
-  }
+const getTipOptions = () => TIP_OPTIONS
+  .map((option) => ({ ...option, address: option.address.trim() }))
+  .filter((option) => option.address.length > 0);
 
-  const fallbackMessage = `Send ${TIP_LABEL} to ${address}`;
+let tipOverlayEl = null;
+
+const copyTipAddress = (option) => {
+  const fallbackMessage = `Send ${option.label} to ${option.address}`;
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(address).then(
-      () => showTipToast(`${TIP_LABEL} address copied.`),
+    navigator.clipboard.writeText(option.address).then(
+      () => showTipToast(`${option.label} address copied.`),
       () => showTipToast(fallbackMessage)
     );
   } else {
     showTipToast(fallbackMessage);
   }
+};
+
+const closeTipOverlay = () => {
+  if (tipOverlayEl) {
+    tipOverlayEl.remove();
+    tipOverlayEl = null;
+  }
+};
+
+const showTipMenu = (options) => {
+  closeTipOverlay();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 12000;
+  `;
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeTipOverlay();
+    }
+  });
+
+  const panel = document.createElement('div');
+  panel.style.cssText = `
+    background: rgba(0, 0, 0, 0.85);
+    border: 3px solid #FFD700;
+    border-radius: 16px;
+    padding: 30px 40px;
+    text-align: center;
+    min-width: 260px;
+    max-width: 90vw;
+  `;
+
+  const title = document.createElement('div');
+  title.textContent = 'TIP USDC';
+  title.style.cssText = `
+    font-size: 24px;
+    color: #FFD700;
+    font-family: 'Orbitron', sans-serif;
+    margin-bottom: 16px;
+  `;
+  panel.appendChild(title);
+
+  options.forEach((option) => {
+    const button = document.createElement('button');
+    button.className = 'menu-btn secondary';
+    button.textContent = option.label;
+    button.style.width = '100%';
+    button.addEventListener('click', () => {
+      copyTipAddress(option);
+      closeTipOverlay();
+    });
+    panel.appendChild(button);
+  });
+
+  const closeButton = document.createElement('button');
+  closeButton.className = 'menu-btn secondary';
+  closeButton.textContent = 'CLOSE';
+  closeButton.style.width = '100%';
+  closeButton.addEventListener('click', closeTipOverlay);
+  panel.appendChild(closeButton);
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  tipOverlayEl = overlay;
+};
+
+const handleTipClick = () => {
+  const options = getTipOptions();
+  if (!options.length) {
+    showTipToast('Tip wallet not set yet.');
+    return;
+  }
+  if (options.length === 1) {
+    copyTipAddress(options[0]);
+    return;
+  }
+  showTipMenu(options);
 };
 
 signalFarcasterReady();
