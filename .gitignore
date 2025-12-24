@@ -78,3 +78,6 @@ assets/wip/
 *.bak
 *.old
 *.orig
+
+# Local documentation / notes (do not commit)
+change-log/

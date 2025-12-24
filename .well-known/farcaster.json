@@ -1,0 +1,32 @@
+{
+  "frame": {
+    "name": "BonkHouse",
+    "version": "1",
+    "iconUrl": "https://bonkhouse.netlify.app/icon.png",
+    "homeUrl": "https://bonkhouse.netlify.app/",
+    "imageUrl": "https://bonkhouse.netlify.app/image.png",
+    "buttonTitle": "Play Bonkhouse",
+    "splashImageUrl": "https://bonkhouse.netlify.app/splash.png",
+    "splashBackgroundColor": "#8E1C0B",
+    "webhookUrl": "https://bonkhouse.netlify.app/api/webhook",
+    "subtitle": "Defend the Lane. Protect the House",
+    "description": "One House. One Hero. Endless Waves",
+    "primaryCategory": "games",
+    "screenshotUrls": [
+      "https://bonkhouse.netlify.app/Screenshot1.png"
+    ],
+    "heroImageUrl": "https://bonkhouse.netlify.app/hero.png",
+    "tags": [
+      "bonkhouse",
+      "games",
+      "shooter",
+      "action",
+      "arcade"
+    ],
+    "tagline": "Defend the Lane. Hold Fast.",
+    "ogTitle": "Bonkhouse — Defend the Lane",
+    "ogDescription": "A fast lane shooter where Bonkhouse stands alone. Hold the line and survive endless waves.",
+    "castShareUrl": "https://bonkhouse.netlify.app/og.png",
+    "ogImageUrl": "https://bonkhouse.netlify.app/og-image.png"
+  }
+}
