@@ -1082,7 +1082,7 @@ restartFromPauseBtn.addEventListener('click', () => {
 
 closeUpgradesBtnEl.addEventListener('click', () => {
   upgradesMenuEl.classList.remove('show');
-  startWaveBtn.classList.add('show');
+  startWave();
 });
 
 // Input handling
@@ -1785,6 +1785,7 @@ function checkBulletEnemyCollisions() {
 function checkEnemyPlayerCollisions() {
   const activeEnemies = enemyPool.getActive();
   const playerPos = player.getPosition();
+  const laneEndZ = CONFIG.LANE_POSITION_Z + CONFIG.LANE_LENGTH / 2;
   
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const enemy = activeEnemies[i];
@@ -1793,9 +1794,10 @@ function checkEnemyPlayerCollisions() {
     // Check if enemy reached Bonkhouse's position
     const enemyPos = enemy.getPosition();
     const distance = enemyPos.distanceTo(playerPos);
+    const reachedEndOfLane = enemyPos.z >= laneEndZ;
     
     // Collision radius - when enemy gets close to Bonkhouse
-    if (distance < (CONFIG.PLAYER_COLLISION_RADIUS + CONFIG.ENEMY_COLLISION_RADIUS + 0.5)) {
+    if (reachedEndOfLane || distance < (CONFIG.PLAYER_COLLISION_RADIUS + CONFIG.ENEMY_COLLISION_RADIUS + 0.5)) {
       // Enemy hit player
       const dead = player.takeDamage(CONFIG.ENEMY_DAMAGE_TO_PLAYER);
       enemy.deactivate();
