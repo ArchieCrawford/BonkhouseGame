@@ -15,6 +15,10 @@ import * as farcaster from "https://esm.sh/@farcaster/miniapp-sdk";
 const farcasterSdk = farcaster.sdk || farcaster.default || farcaster;
 const farcasterActions = farcasterSdk.actions || farcaster.actions;
 const farcasterContext = farcasterSdk.context || farcaster.context;
+let pendingFarcasterContext = null;
+let gameSettingsReady = false;
+const TIP_USDC_ADDRESS = ''; // TODO: set your USDC wallet address to enable tips.
+const TIP_LABEL = 'USDC';
 
 const signalFarcasterReady = () => {
   const readyFn = farcasterActions?.ready || farcasterSdk?.actions?.ready;
@@ -29,9 +33,135 @@ const signalFarcasterReady = () => {
   }
 };
 
+const getOrCreateGuestId = () => {
+  let guestId = localStorage.getItem('bonkhouseGuestId');
+  if (!guestId) {
+    guestId = `guest-${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem('bonkhouseGuestId', guestId);
+  }
+  return guestId;
+};
+
+const extractFarcasterUser = (ctx) => {
+  if (!ctx) return null;
+  return (
+    ctx.user ||
+    ctx.context?.user ||
+    ctx.client?.user ||
+    ctx.userContext?.user ||
+    null
+  );
+};
+
+const getDisplayName = () => gameSettings.playerName || gameSettings.playerDisplayName || 'Player';
+
+const updateIdentityUI = () => {
+  const displayName = getDisplayName();
+  if (menuUserNameEl) {
+    menuUserNameEl.textContent = displayName;
+  }
+  if (hudUserNameEl) {
+    hudUserNameEl.textContent = displayName;
+  }
+  if (leaderboardUserNameEl) {
+    leaderboardUserNameEl.textContent = displayName;
+  }
+};
+
+const applyFarcasterIdentity = (ctx) => {
+  const user = extractFarcasterUser(ctx);
+  const fid = user?.fid ?? user?.id ?? null;
+  if (fid === null || fid === undefined) return false;
+  
+  const username = user.username || user.displayName || `fid-${fid}`;
+  const displayName = user.displayName || user.username || `FID ${fid}`;
+  
+  gameSettings.playerName = username;
+  gameSettings.playerId = `fid:${fid}`;
+  gameSettings.playerFid = fid;
+  gameSettings.playerDisplayName = displayName;
+  gameSettings.playerPfpUrl = user.pfpUrl || user.pfp_url || null;
+  gameSettings.identitySource = 'farcaster';
+  
+  if (playerNameInputEl) {
+    playerNameInputEl.value = username;
+    playerNameInputEl.readOnly = true;
+    playerNameInputEl.title = 'Linked to Farcaster identity';
+  }
+  
+  saveSettings();
+  return true;
+};
+
+const ensureGuestIdentity = () => {
+  const hasFarcasterContext = Boolean(pendingFarcasterContext || window.farcasterContext);
+  if (gameSettings.identitySource === 'farcaster' && hasFarcasterContext) return;
+  
+  const guestId = gameSettings.playerId || getOrCreateGuestId();
+  if (!gameSettings.playerName || gameSettings.playerName === 'Player') {
+    gameSettings.playerName = `Guest${guestId.slice(-4).toUpperCase()}`;
+  }
+  
+  gameSettings.playerId = guestId;
+  gameSettings.identitySource = 'guest';
+  
+  if (playerNameInputEl) {
+    playerNameInputEl.value = gameSettings.playerName;
+    playerNameInputEl.readOnly = false;
+    playerNameInputEl.removeAttribute('title');
+  }
+  updateIdentityUI();
+};
+
 const storeFarcasterContext = (ctx) => {
   if (ctx) {
     window.farcasterContext = ctx;
+    pendingFarcasterContext = ctx;
+    if (gameSettingsReady) {
+      applyFarcasterIdentity(ctx);
+    }
+  }
+};
+
+const showTipToast = (message) => {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.85);
+    color: #FFD700;
+    padding: 12px 20px;
+    border: 2px solid #FFD700;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Orbitron', sans-serif;
+    z-index: 11000;
+    text-align: center;
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.remove();
+  }, 2000);
+};
+
+const handleTipClick = () => {
+  const address = TIP_USDC_ADDRESS.trim();
+  if (!address) {
+    showTipToast('Tip wallet not set yet.');
+    return;
+  }
+
+  const fallbackMessage = `Send ${TIP_LABEL} to ${address}`;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(address).then(
+      () => showTipToast(`${TIP_LABEL} address copied.`),
+      () => showTipToast(fallbackMessage)
+    );
+  } else {
+    showTipToast(fallbackMessage);
   }
 };
 
@@ -271,6 +401,11 @@ const saveSettingsBtnEl = document.getElementById('saveSettingsBtn');
 const backFromSettingsBtnEl = document.getElementById('backFromSettingsBtn');
 const backFromLeaderboardBtnEl = document.getElementById('backFromLeaderboardBtn');
 const leaderboardListEl = document.getElementById('leaderboardList');
+const menuUserNameEl = document.getElementById('menuUserName');
+const hudUserNameEl = document.getElementById('hudUserName');
+const leaderboardUserNameEl = document.getElementById('leaderboardUserName');
+const tipBtnEl = document.getElementById('tipBtn');
+const menuTipBtnEl = document.getElementById('menuTipBtn');
 const finalTimeEl = document.getElementById('finalTime');
 const newHighScoreMsgEl = document.getElementById('newHighScoreMsg');
 const waveBannerEl = document.getElementById('waveBanner');
@@ -285,6 +420,11 @@ const closeUpgradesBtnEl = document.getElementById('closeUpgradesBtn');
 // Settings and Profile System
 let gameSettings = {
   playerName: 'Player',
+  playerId: null,
+  playerFid: null,
+  playerDisplayName: null,
+  playerPfpUrl: null,
+  identitySource: 'guest',
   difficulty: 'medium',
   totalCoins: 0 // Lifetime coins for store purchases
 };
@@ -575,18 +715,32 @@ window.buyCoinPackage = function(packageId) {
 function loadSettings() {
   const saved = localStorage.getItem('bonkhouseSettings');
   if (saved) {
-    gameSettings = JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    gameSettings = { ...gameSettings, ...parsed };
   }
+  ensureGuestIdentity();
   playerNameInputEl.value = gameSettings.playerName;
+  updateIdentityUI();
   updateDifficultyButtons();
 }
 
 function saveSettings() {
-  gameSettings.playerName = playerNameInputEl.value.trim() || 'Player';
-  // Don't overwrite totalCoins when saving settings
   const currentSettings = JSON.parse(localStorage.getItem('bonkhouseSettings') || '{}');
+  const isFarcasterLocked = gameSettings.identitySource === 'farcaster';
+  const inputName = playerNameInputEl.value.trim();
+  
+  if (!isFarcasterLocked) {
+    gameSettings.playerName = inputName || gameSettings.playerName || 'Player';
+  }
+  
+  gameSettings.playerId = gameSettings.playerId || currentSettings.playerId || getOrCreateGuestId();
+  gameSettings.playerFid = gameSettings.playerFid || currentSettings.playerFid || null;
+  gameSettings.playerDisplayName = gameSettings.playerDisplayName || currentSettings.playerDisplayName || null;
+  gameSettings.playerPfpUrl = gameSettings.playerPfpUrl || currentSettings.playerPfpUrl || null;
+  gameSettings.identitySource = gameSettings.identitySource || currentSettings.identitySource || 'guest';
   gameSettings.totalCoins = currentSettings.totalCoins || gameSettings.totalCoins || 0;
   localStorage.setItem('bonkhouseSettings', JSON.stringify(gameSettings));
+  updateIdentityUI();
 }
 
 function updateDifficultyButtons() {
@@ -603,6 +757,11 @@ function saveHighScore(wave, time, coins) {
   const leaderboard = getLeaderboard();
   const score = {
     name: gameSettings.playerName,
+    playerId: gameSettings.playerId,
+    fid: gameSettings.playerFid,
+    displayName: gameSettings.playerDisplayName,
+    pfpUrl: gameSettings.playerPfpUrl,
+    identitySource: gameSettings.identitySource,
     wave: wave,
     time: time,
     coins: coins,
@@ -634,6 +793,7 @@ function formatTime(seconds) {
 }
 
 function displayLeaderboard() {
+  updateIdentityUI();
   const leaderboard = getLeaderboard();
   leaderboardListEl.innerHTML = '';
   
@@ -647,10 +807,11 @@ function displayLeaderboard() {
     entry.className = 'leaderboard-entry' + (index < 3 ? ' top3' : '');
     
     const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+    const displayName = score.name || score.displayName || 'Player';
     
     entry.innerHTML = `
       <div class="leaderboard-rank">${rankEmoji}</div>
-      <div class="leaderboard-name">${score.name}</div>
+      <div class="leaderboard-name">${displayName}</div>
       <div class="leaderboard-score">Wave ${score.wave}</div>
       <div class="leaderboard-time">${formatTime(score.time)}</div>
     `;
@@ -670,6 +831,10 @@ const loadingTips = [
 // Load settings and character store on startup
 loadSettings();
 loadCharacterStore();
+gameSettingsReady = true;
+if (pendingFarcasterContext) {
+  applyFarcasterIdentity(pendingFarcasterContext);
+}
 
 // Loading screen sequence
 let loadingProgress = 0;
@@ -777,6 +942,14 @@ backFromSettingsBtnEl.addEventListener('click', () => {
 backFromLeaderboardBtnEl.addEventListener('click', () => {
   leaderboardMenuEl.style.display = 'none';
   mainMenuEl.classList.add('show');
+});
+
+[
+  tipBtnEl,
+  menuTipBtnEl
+].forEach((button) => {
+  if (!button) return;
+  button.addEventListener('click', handleTipClick);
 });
 
 // Difficulty button handlers

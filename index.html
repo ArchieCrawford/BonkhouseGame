@@ -80,6 +80,25 @@
         text-align: right;
         font-size: 24px;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+      }
+      #playerIdentity {
+        font-size: 16px;
+        color: #FFD700;
+        margin-bottom: 6px;
+      }
+      .tip-btn {
+        font-size: 14px;
+        padding: 8px 14px;
+        background: linear-gradient(90deg, #FFA500, #FFD700);
+        color: #2C3E50;
+        border-color: #FFD700;
+      }
+      .tip-btn:hover {
+        background: linear-gradient(90deg, #FF8C00, #FFC400);
       }
       #coins {
         color: #f1c40f;
@@ -282,6 +301,15 @@
       #menuCharacter {
         font-size: 100px;
         margin: 20px 0 40px 0;
+      }
+      #menuUserRow {
+        font-size: 18px;
+        color: #ffffff;
+        margin-bottom: 20px;
+      }
+      #menuUserName {
+        color: #FFD700;
+        font-weight: bold;
       }
       .menu-btn {
         padding: 20px 60px;
@@ -665,6 +693,15 @@
         color: #B0BEC5;
         margin-left: 10px;
       }
+      #leaderboardUserRow {
+        font-size: 18px;
+        color: #ffffff;
+        margin-bottom: 20px;
+      }
+      #leaderboardUserName {
+        color: #FFD700;
+        font-weight: bold;
+      }
       #storeMenu {
         position: absolute;
         top: 0;
@@ -906,10 +943,12 @@
       <div class="menu-content-panel">
         <div id="menuTitle">BONKHOUSE</div>
         <div id="menuSubtitle">Defend the Lane</div>
+        <div id="menuUserRow">PLAYER: <span id="menuUserName">Player</span></div>
         <button id="playBtn" class="menu-btn">PLAY</button>
         <button id="storeBtn" class="menu-btn secondary">STORE</button>
         <button id="leaderboardBtn" class="menu-btn secondary">LEADERBOARD</button>
         <button id="settingsBtn" class="menu-btn secondary">SETTINGS</button>
+        <button id="menuTipBtn" class="menu-btn secondary">TIP USDC</button>
       </div>
     </div>
     
@@ -951,6 +990,7 @@
     <div id="leaderboardMenu" style="display: none;">
       <div class="menu-content-panel" style="max-width: 600px;">
         <h2 style="font-size: 48px; color: #FFD700; margin-bottom: 30px;">🏆 LEADERBOARD 🏆</h2>
+        <div id="leaderboardUserRow">SIGNED IN AS: <span id="leaderboardUserName">Player</span></div>
         <div id="leaderboardList" style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;">
           <!-- Leaderboard entries will be populated here -->
         </div>
@@ -1008,13 +1048,15 @@
     <div id="ui">
       <div id="waveBanner">TASK: Eliminate all enemies!</div>
       <div id="topLeft">
+        <div id="playerIdentity">PLAYER: <span id="hudUserName">Player</span></div>
         <div>HP: <span id="playerHP">100</span></div>
         <div id="playerHealthBar">
           <div id="playerHealthFill"></div>
         </div>
       </div>
       <div id="topRight">
-        💰 <span id="coins">0</span>
+        <div>💰 <span id="coins">0</span></div>
+        <button id="tipBtn" class="btn tip-btn">TIP USDC</button>
       </div>
       <div id="topCenter">
         WAVE <span id="wave">1</span>
