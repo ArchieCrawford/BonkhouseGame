@@ -34,8 +34,8 @@ export const CONFIG = {
   COINS_PER_KILL: 5,
 
   // Backend
-  SUPABASE_URL: 'YOUR_SUPABASE_URL',
-  SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
+  SUPABASE_URL: 'https://ljefobmczhhkatkpdfva.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqZWZvYm1jemhoa2F0a3BkZnZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3OTQxNDMsImV4cCI6MjA4MjM3MDE0M30.OBPafW5tz5kfDk84HDaeEfKdYrgmsADuAu3eEG2qD3U',
   GAME_VERSION: '0.1.0',
   
   // Object pooling
