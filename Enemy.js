@@ -31,6 +31,7 @@ export class Enemy {
     this.model = null;
     this.useAnimatedModel = false;
     this.isBoss = false;
+    this._modelLoadRequestId = 0;
     
     // Add spiky decoration for visual variety
     this.spikes = [];
@@ -62,8 +63,45 @@ export class Enemy {
     this.healthBar.position.z = 0.01;
     this.group.add(this.healthBar);
   }
+
+  _clearAnimatedModel() {
+    if (this.mixer) {
+      this.mixer.stopAllAction();
+      this.mixer = null;
+    }
+
+    if (this.model) {
+      this.group.remove(this.model);
+
+      // Best-effort dispose to avoid GPU/memory growth when using pools.
+      this.model.traverse((child) => {
+        if (!child || !child.isMesh) return;
+
+        if (child.geometry && typeof child.geometry.dispose === 'function') {
+          child.geometry.dispose();
+        }
+
+        const material = child.material;
+        if (Array.isArray(material)) {
+          material.forEach((m) => {
+            if (m && typeof m.dispose === 'function') m.dispose();
+          });
+        } else if (material && typeof material.dispose === 'function') {
+          material.dispose();
+        }
+      });
+
+      this.model = null;
+    }
+  }
   
   loadAnimatedModel(enemyType) {
+    // Invalidate any in-flight load for this pooled instance.
+    const requestId = ++this._modelLoadRequestId;
+
+    // Remove any previously loaded model to avoid accumulating meshes on reuse.
+    this._clearAnimatedModel();
+
     // Load animated walking enemy GLB
     const loader = new GLTFLoader();
     
@@ -120,6 +158,23 @@ export class Enemy {
     loader.load(
       modelUrl,
       (gltf) => {
+        // If this enemy got recycled/deactivated while loading, ignore this result.
+        if (requestId !== this._modelLoadRequestId || !this.active) {
+          // Dispose the loaded scene to avoid leaks.
+          try {
+            gltf.scene.traverse((child) => {
+              if (!child || !child.isMesh) return;
+              if (child.geometry && typeof child.geometry.dispose === 'function') child.geometry.dispose();
+              const material = child.material;
+              if (Array.isArray(material)) material.forEach((m) => m && m.dispose && m.dispose());
+              else if (material && material.dispose) material.dispose();
+            });
+          } catch (_) {
+            // ignore
+          }
+          return;
+        }
+
         this.model = gltf.scene;
         
         this.model.scale.set(scale, scale, scale);
@@ -141,7 +196,7 @@ export class Enemy {
           }
         });
         
-        // Hide the primitive mesh (fallback)
+        // Hide the primitive mesh (fallback) now that the model is ready.
         this.mesh.visible = false;
         this.spikes.forEach(spike => spike.visible = false);
         
@@ -163,6 +218,14 @@ export class Enemy {
       undefined,
       (error) => {
         console.error(`Error loading ${enemyType} enemy model:`, error);
+
+        // If loading fails, ensure the fallback mesh stays visible so gameplay continues.
+        if (requestId === this._modelLoadRequestId) {
+          this.model = null;
+          this.mixer = null;
+          this.mesh.visible = true;
+          this.spikes.forEach(spike => spike.visible = true);
+        }
       }
     );
   }
@@ -192,8 +255,9 @@ export class Enemy {
     
     // ALL enemies now use animated GLB models
     this.useAnimatedModel = true;
-    this.mesh.visible = false;
-    this.spikes.forEach(spike => spike.visible = false);
+    // Keep fallback visible until model loads (prevents invisible enemies on slow/failed loads).
+    this.mesh.visible = true;
+    this.spikes.forEach(spike => spike.visible = true);
     
     // Boss enemy - spawns every 5 waves
     if (forceBoss || (wave % 5 === 0 && wave >= 5 && rand < 0.25)) {
@@ -362,9 +426,17 @@ export class Enemy {
   }
   
   deactivate() {
+    // Invalidate any pending async model load and clear previous model for safe reuse.
+    this._modelLoadRequestId++;
+    this._clearAnimatedModel();
+
     this.active = false;
     this.group.visible = false;
     this.group.position.set(0, -100, 0);
+
+    // Reset visuals for next spawn.
+    this.mesh.visible = true;
+    this.spikes.forEach(spike => spike.visible = true);
   }
   
   destroy() {

@@ -11,12 +11,91 @@ import { UpgradeSystem } from './UpgradeSystem.js';
 import { AtmosphericEffects } from './AtmosphericEffects.js';
 import { CONFIG } from './config.js';
 import * as farcaster from "https://esm.sh/@farcaster/miniapp-sdk";
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
 const farcasterSdk = farcaster.sdk || farcaster.default || farcaster;
 const farcasterActions = farcasterSdk.actions || farcaster.actions;
 const farcasterContext = farcasterSdk.context || farcaster.context;
 let pendingFarcasterContext = null;
 let gameSettingsReady = false;
+
+// Supabase config
+// Note: a plain `.env` file is not automatically readable from browser JS.
+// For local dev you can serve a `.env` file and we'll parse it here. For production,
+// prefer injecting `window.__ENV = { YOUR_SUPABASE_URL, YOUR_SUPABASE_ANON_KEY }`.
+const isSupabasePlaceholder = (value) => {
+  if (typeof value !== 'string') return true;
+  const trimmed = value.trim();
+  return !trimmed || trimmed.includes('YOUR_SUPABASE');
+};
+
+const parseDotEnvText = (text) => {
+  const out = {};
+  if (typeof text !== 'string') return out;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+
+    // Strip surrounding quotes
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    out[key] = value;
+  }
+
+  return out;
+};
+
+const applySupabaseRuntimeConfig = async () => {
+  // 1) window-injected env (recommended for production)
+  const injected = window.__ENV || window.ENV || null;
+  if (injected && typeof injected === 'object') {
+    if (typeof injected.YOUR_SUPABASE_URL === 'string' && injected.YOUR_SUPABASE_URL.trim()) {
+      CONFIG.SUPABASE_URL = injected.YOUR_SUPABASE_URL.trim();
+    }
+    if (typeof injected.YOUR_SUPABASE_ANON_KEY === 'string' && injected.YOUR_SUPABASE_ANON_KEY.trim()) {
+      CONFIG.SUPABASE_ANON_KEY = injected.YOUR_SUPABASE_ANON_KEY.trim();
+    }
+  }
+
+  // 2) served .env file (handy for local dev)
+  if (isSupabasePlaceholder(CONFIG.SUPABASE_URL) || isSupabasePlaceholder(CONFIG.SUPABASE_ANON_KEY)) {
+    try {
+      const res = await fetch('./.env', { cache: 'no-store' });
+      if (res.ok) {
+        const envText = await res.text();
+        const env = parseDotEnvText(envText);
+        if (typeof env.YOUR_SUPABASE_URL === 'string' && env.YOUR_SUPABASE_URL.trim()) {
+          CONFIG.SUPABASE_URL = env.YOUR_SUPABASE_URL.trim();
+        }
+        if (typeof env.YOUR_SUPABASE_ANON_KEY === 'string' && env.YOUR_SUPABASE_ANON_KEY.trim()) {
+          CONFIG.SUPABASE_ANON_KEY = env.YOUR_SUPABASE_ANON_KEY.trim();
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+};
+
+await applySupabaseRuntimeConfig();
+
+const SUPABASE_URL = CONFIG.SUPABASE_URL;
+const SUPABASE_ANON_KEY = CONFIG.SUPABASE_ANON_KEY;
+const supabaseEnabled = Boolean(
+  SUPABASE_URL &&
+  SUPABASE_ANON_KEY &&
+  !isSupabasePlaceholder(SUPABASE_URL) &&
+  !isSupabasePlaceholder(SUPABASE_ANON_KEY)
+);
+const supabase = supabaseEnabled ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TIP_RECIPIENT_SOL = 'DbX8NV1SZdWzYLDoexVLXUd8pZZ6fSx4CeusLPdvk8VP';
 const TIP_RECIPIENT_EVM = '0x21cB408a394b24153b8164bdb09F508f741737c0';
 const TIP_AMOUNTS = [1, 5, 10];
@@ -71,6 +150,82 @@ const logProgressEvent = (eventName, eventData = {}) => {
   }
 };
 
+const normalizeWalletAddress = (address) => (address ? address.toLowerCase() : null);
+
+const getDeviceLabel = () => {
+  const ua = navigator.userAgent || '';
+  return /Mobi|Android|iPhone|iPad/i.test(ua) ? 'mobile' : 'desktop';
+};
+
+const getSelectedCharacterId = () => characterStore?.selectedCharacter || 'bonkhouse';
+
+const getGameVersion = () => CONFIG.GAME_VERSION || null;
+
+const recordSessionStartRemote = async ({ wallet }) => {
+  if (!supabase || !wallet) return null;
+  const payload = {
+    wallet: normalizeWalletAddress(wallet),
+    game_version: getGameVersion(),
+    character_id: getSelectedCharacterId(),
+    device: getDeviceLabel(),
+    referrer: document.referrer || null
+  };
+  const { data, error } = await supabase
+    .from('sessions')
+    .insert([payload])
+    .select('id')
+    .single();
+  if (error) {
+    console.warn('Supabase session start failed:', error);
+    return null;
+  }
+  return data?.id || null;
+};
+
+const recordSessionEndRemote = async ({ sessionId, durationMs }) => {
+  if (!supabase || !sessionId) return;
+  const { error } = await supabase
+    .from('sessions')
+    .update({
+      ended_at: new Date().toISOString(),
+      duration_ms: durationMs || null
+    })
+    .eq('id', sessionId);
+  if (error) {
+    console.warn('Supabase session end failed:', error);
+  }
+};
+
+const saveScoreRemote = async ({ wallet, score, wave, durationMs, sessionId }) => {
+  if (!supabase || !wallet) return;
+  const payload = {
+    wallet: normalizeWalletAddress(wallet),
+    score,
+    wave: wave ?? null,
+    character_id: getSelectedCharacterId(),
+    duration_ms: durationMs ?? null,
+    session_id: sessionId || null,
+    signature: null
+  };
+  const { error } = await supabase.from('scores').insert([payload]);
+  if (error) {
+    console.warn('Supabase score save failed:', error);
+  }
+};
+
+const fetchLeaderboardRemote = async (limit = 50) => {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('leaderboard_top')
+    .select('*')
+    .limit(limit);
+  if (error) {
+    console.warn('Supabase leaderboard fetch failed:', error);
+    return null;
+  }
+  return data || [];
+};
+
 const getPlayerStats = () => {
   const saved = localStorage.getItem('bonkhousePlayerStats');
   if (saved) {
@@ -109,8 +264,9 @@ const recordWalletStats = (address) => {
 };
 
 let activeSessionId = null;
+let activeSupabaseSessionId = null;
 
-const recordSessionStart = () => {
+const recordSessionStart = async () => {
   if (activeSessionId) return;
   activeSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const stats = getPlayerStats();
@@ -136,9 +292,10 @@ const recordSessionStart = () => {
     walletSource: gameSettings.walletSource,
     identitySource: gameSettings.identitySource
   });
+  activeSupabaseSessionId = await recordSessionStartRemote({ wallet: walletAddress });
 };
 
-const recordSessionEnd = (score) => {
+const recordSessionEnd = async (score) => {
   if (!activeSessionId) return;
   const stats = getPlayerStats();
   const coins = score?.coins || 0;
@@ -172,7 +329,12 @@ const recordSessionEnd = (score) => {
     time,
     coins
   });
+  const durationMs = time ? Math.round(time * 1000) : null;
+  if (activeSupabaseSessionId) {
+    await recordSessionEndRemote({ sessionId: activeSupabaseSessionId, durationMs });
+  }
   activeSessionId = null;
+  activeSupabaseSessionId = null;
 };
 
 const getScoreHistory = () => {
@@ -1181,6 +1343,7 @@ function saveHighScore(wave, time, coins) {
   const walletAddress = gameSettings.walletAddress || null;
   const walletChainId = gameSettings.walletChainId || null;
   const playerId = walletAddress ? `wallet:${walletAddress}` : gameSettings.playerId;
+  const scoreMs = Math.round(time * 1000);
   const score = {
     name: gameSettings.playerName,
     playerId,
@@ -1199,6 +1362,13 @@ function saveHighScore(wave, time, coins) {
 
   saveScoreHistory(score);
   logProgressEvent('score_saved', score);
+  saveScoreRemote({
+    wallet: walletAddress,
+    score: scoreMs,
+    wave,
+    durationMs: scoreMs,
+    sessionId: activeSupabaseSessionId
+  });
   
   // Check if this is a new high score before adding
   const isNewHighScore = leaderboard.length === 0 || time > leaderboard[0].time;
@@ -1224,9 +1394,22 @@ function formatTime(seconds) {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function displayLeaderboard() {
+async function displayLeaderboard() {
   updateIdentityUI();
-  const leaderboard = getLeaderboard();
+  leaderboardListEl.innerHTML = '<p style="text-align: center; color: #B0BEC5; padding: 20px;">Loading scores...</p>';
+  let leaderboard = [];
+  const remoteLeaderboard = await fetchLeaderboardRemote(50);
+  if (remoteLeaderboard && remoteLeaderboard.length) {
+    leaderboard = remoteLeaderboard.map((row) => ({
+      name: row.wallet
+        ? `${row.wallet.slice(0, 6)}...${row.wallet.slice(-4)}`
+        : 'Player',
+      wave: Number.isFinite(Number(row.best_wave)) ? Number(row.best_wave) : null,
+      time: Number.isFinite(Number(row.best_score)) ? Number(row.best_score) / 1000 : 0
+    }));
+  } else {
+    leaderboard = getLeaderboard();
+  }
   leaderboardListEl.innerHTML = '';
   
   if (leaderboard.length === 0) {
@@ -1243,11 +1426,12 @@ function displayLeaderboard() {
       ? `${score.walletAddress.slice(0, 6)}...${score.walletAddress.slice(-4)}`
       : null;
     const displayName = score.name || score.displayName || walletLabel || 'Player';
+    const waveLabel = score.wave ?? '-';
     
     entry.innerHTML = `
       <div class="leaderboard-rank">${rankEmoji}</div>
       <div class="leaderboard-name">${displayName}</div>
-      <div class="leaderboard-score">Wave ${score.wave}</div>
+      <div class="leaderboard-score">Wave ${waveLabel}</div>
       <div class="leaderboard-time">${formatTime(score.time)}</div>
     `;
     leaderboardListEl.appendChild(entry);
@@ -2265,19 +2449,17 @@ function updateGame(deltaTime) {
   const closestEnemy = findClosestEnemy();
   const fireRateLevel = upgradeSystem.upgrades.fireRate.level;
   
-  if (closestEnemy) {
-    // Level 0 = Manual pistol (shoot on input press)
-    // Level 1+ = Machine gun (auto-fire)
-    if (fireRateLevel === 0) {
-      // Pistol mode - only shoot when player presses shoot button
-      if (input.shoot && player.canShoot()) {
-        shootBullet();
-      }
-    } else {
-      // Machine gun mode - auto-fire
-      if (player.canShoot()) {
-        shootBullet();
-      }
+  // Level 0 = Manual pistol (shoot on input press)
+  // Level 1+ = Machine gun (auto-fire)
+  if (fireRateLevel === 0) {
+    // Allow manual shots even if no enemies are active yet.
+    if (input.shoot && player.canShoot()) {
+      shootBullet();
+    }
+  } else {
+    // Auto-fire only when there's a target to avoid firing nonstop between spawns.
+    if (closestEnemy && player.canShoot()) {
+      shootBullet();
     }
   }
   

@@ -32,6 +32,11 @@ export const CONFIG = {
   
   // Coins
   COINS_PER_KILL: 5,
+
+  // Backend
+  SUPABASE_URL: 'YOUR_SUPABASE_URL',
+  SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
+  GAME_VERSION: '0.1.0',
   
   // Object pooling
   MAX_BULLETS: 50,

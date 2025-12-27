@@ -20,6 +20,9 @@ export class Weapon {
     }
     
     this.currentLevel = level;
+
+    // Clear any level-specific references from previous weapon.
+    this.barrelGroup = null;
     
     // Create weapon based on level
     if (level === 0) {
