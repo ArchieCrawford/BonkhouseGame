@@ -311,6 +311,29 @@ const saveScoreHistory = (score) => {
   localStorage.setItem('bonkhouseScoreHistory', JSON.stringify(trimmed));
 };
 
+const getWalletStatusLabel = () => {
+  const walletAddress = gameSettings.walletAddress;
+  if (walletAddress) {
+    const shortAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+    const sourceLabel = gameSettings.walletSource ? ` (${gameSettings.walletSource})` : '';
+    return `Connected ${shortAddress}${sourceLabel}`;
+  }
+  if (authKitAuthenticated || gameSettings.identitySource === 'farcaster' || gameSettings.identitySource === 'farcaster-authkit') {
+    return 'Signed in (no wallet)';
+  }
+  return 'Not connected';
+};
+
+const updateWalletStatusUI = () => {
+  const statusLabel = getWalletStatusLabel();
+  if (menuWalletStatusEl) {
+    menuWalletStatusEl.textContent = statusLabel;
+  }
+  if (hudWalletStatusEl) {
+    hudWalletStatusEl.textContent = statusLabel;
+  }
+};
+
 const updateIdentityUI = () => {
   const displayName = getDisplayName();
   if (menuUserNameEl) {
@@ -322,6 +345,7 @@ const updateIdentityUI = () => {
   if (leaderboardUserNameEl) {
     leaderboardUserNameEl.textContent = displayName;
   }
+  updateWalletStatusUI();
 };
 
 const updateWalletIdentity = (address, chainId, source = 'wallet') => {
@@ -1011,7 +1035,9 @@ const backFromSettingsBtnEl = document.getElementById('backFromSettingsBtn');
 const backFromLeaderboardBtnEl = document.getElementById('backFromLeaderboardBtn');
 const leaderboardListEl = document.getElementById('leaderboardList');
 const menuUserNameEl = document.getElementById('menuUserName');
+const menuWalletStatusEl = document.getElementById('menuWalletStatus');
 const hudUserNameEl = document.getElementById('hudUserName');
+const hudWalletStatusEl = document.getElementById('hudWalletStatus');
 const leaderboardUserNameEl = document.getElementById('leaderboardUserName');
 const tipBtnEl = document.getElementById('tipBtn');
 const menuTipBtnEl = document.getElementById('menuTipBtn');

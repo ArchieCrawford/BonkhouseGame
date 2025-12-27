@@ -91,6 +91,15 @@
         color: #FFD700;
         margin-bottom: 6px;
       }
+      #hudWalletRow {
+        font-size: 14px;
+        color: #B0BEC5;
+        margin-bottom: 6px;
+      }
+      #hudWalletStatus {
+        color: #FFD700;
+        font-weight: bold;
+      }
       .tip-btn {
         font-size: 14px;
         padding: 8px 14px;
@@ -309,6 +318,15 @@
         margin-bottom: 20px;
       }
       #menuUserName {
+        color: #FFD700;
+        font-weight: bold;
+      }
+      #menuWalletRow {
+        font-size: 14px;
+        color: #B0BEC5;
+        margin-bottom: 20px;
+      }
+      #menuWalletStatus {
         color: #FFD700;
         font-weight: bold;
       }
@@ -968,6 +986,7 @@
         <div id="menuTitle">BONKHOUSE</div>
         <div id="menuSubtitle">Defend the Lane</div>
         <div id="menuUserRow">PLAYER: <span id="menuUserName">Player</span></div>
+        <div id="menuWalletRow">WALLET: <span id="menuWalletStatus">Not connected</span></div>
         <div id="farcasterSignIn"></div>
         <button id="playBtn" class="menu-btn">PLAY</button>
         <button id="storeBtn" class="menu-btn secondary">STORE</button>
@@ -1074,6 +1093,7 @@
       <div id="waveBanner">TASK: Eliminate all enemies!</div>
       <div id="topLeft">
         <div id="playerIdentity">PLAYER: <span id="hudUserName">Player</span></div>
+        <div id="hudWalletRow">WALLET: <span id="hudWalletStatus">Not connected</span></div>
         <div>HP: <span id="playerHP">100</span></div>
         <div id="playerHealthBar">
           <div id="playerHealthFill"></div>
