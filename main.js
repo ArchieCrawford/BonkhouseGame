@@ -2110,11 +2110,23 @@ function findClosestEnemy() {
   return closest;
 }
 
+function fallbackToPistol() {
+  if (player.weaponMode === 'normal') return false;
+  player.weaponMode = 'normal';
+  player.powerUpTimer = 0;
+  const fireRateBonus = upgradeSystem.getUpgradeValue('fireRate');
+  const rateMultiplier = Math.max(0, 1 - fireRateBonus);
+  player.shootInterval = (1.0 / CONFIG.FIRE_RATE) * rateMultiplier;
+  return true;
+}
+
 function shootBullet() {
   if (!player.canShoot()) return;
   if (!gameState.waveInProgress) return;
   
   const playerPos = player.getPosition();
+  let bulletsSpawned = 0;
+  let weaponModeUsed = player.weaponMode;
   
   // Different shooting patterns based on weapon mode
   switch(player.weaponMode) {
@@ -2128,6 +2140,7 @@ function shootBullet() {
         const offset = new THREE.Vector3(Math.sin(angle) * 0.3, 0, 0);
         bullet.spawn(playerPos.clone().add(offset));
         bullet.mesh.userData.angleOffset = angle; // Store angle for trajectory
+        bulletsSpawned += 1;
       }
       // Shotgun has limited range
       break;
@@ -2135,35 +2148,53 @@ function shootBullet() {
     case 'laser':
       // Laser: weak continuous beam (spawns as rapid small bullets)
       const laserBullet = bulletPool.get();
-      if (!laserBullet) return;
-      laserBullet.spawn(playerPos);
-      laserBullet.mesh.scale.set(0.5, 0.5, 1.5); // Thinner, longer
-      laserBullet.mesh.material.color.setHex(0x00FFFF); // Cyan
-      if (laserBullet.mesh.material.emissive) {
-        laserBullet.mesh.material.emissive.setHex(0x0088FF);
-        laserBullet.mesh.material.emissiveIntensity = 0.9;
+      if (laserBullet) {
+        laserBullet.spawn(playerPos);
+        laserBullet.mesh.scale.set(0.5, 0.5, 1.5); // Thinner, longer
+        laserBullet.mesh.material.color.setHex(0x00FFFF); // Cyan
+        if (laserBullet.mesh.material.emissive) {
+          laserBullet.mesh.material.emissive.setHex(0x0088FF);
+          laserBullet.mesh.material.emissiveIntensity = 0.9;
+        }
+        bulletsSpawned = 1;
       }
       break;
       
     case 'machinegun':
       // Machine gun: normal bullet but rapid fire
       const mgBullet = bulletPool.get();
-      if (!mgBullet) return;
-      mgBullet.spawn(playerPos);
-      mgBullet.mesh.material.color.setHex(0xFF6B00); // Orange
+      if (mgBullet) {
+        mgBullet.spawn(playerPos);
+        mgBullet.mesh.material.color.setHex(0xFF6B00); // Orange
+        bulletsSpawned = 1;
+      }
       break;
       
     default:
       // Normal bullet
       const bullet = bulletPool.get();
-      if (!bullet) return;
-      bullet.spawn(playerPos);
+      if (bullet) {
+        bullet.spawn(playerPos);
+        bulletsSpawned = 1;
+      }
       break;
   }
   
+  if (bulletsSpawned === 0 && player.weaponMode !== 'normal') {
+    fallbackToPistol();
+    weaponModeUsed = 'normal';
+    const fallbackBullet = bulletPool.get();
+    if (fallbackBullet) {
+      fallbackBullet.spawn(playerPos);
+      bulletsSpawned = 1;
+    }
+  }
+
+  if (bulletsSpawned === 0) return;
+
   player.resetShootTimer();
   player.playShootAnimation();
-  audio.playShoot(player.weaponMode); // Pass weapon mode for correct sound
+  audio.playShoot(weaponModeUsed); // Pass weapon mode for correct sound
   createMuzzleFlash(playerPos);
 }
 
@@ -2524,7 +2555,7 @@ function updateGame(deltaTime) {
   }
   
   // Update player power-up
-  const fireRateBonus = fireRateLevel * upgradeSystem.upgrades.fireRate.increment;
+  const fireRateBonus = upgradeSystem.getUpgradeValue('fireRate');
   const powerUpEnded = player.updatePowerUp(deltaTime, fireRateBonus);
   
   // Play sound when power-up expires

@@ -39,7 +39,7 @@ export const CONFIG = {
   GAME_VERSION: '0.1.0',
   
   // Object pooling
-  MAX_BULLETS: 50,
+  MAX_BULLETS: 120,
   MAX_ENEMIES: 30,
   MAX_PARTICLES: 100,
   MAX_POWERUPS: 5,

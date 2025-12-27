@@ -432,7 +432,8 @@ export class Player {
         this.powerUpTimer = 0;
         
         // Restore normal fire rate (considering upgrades)
-        this.shootInterval = 1.0 / (CONFIG.FIRE_RATE + fireRateUpgrade);
+        const rateMultiplier = Math.max(0, 1 - fireRateUpgrade);
+        this.shootInterval = (1.0 / CONFIG.FIRE_RATE) * rateMultiplier;
         
         // Return true to signal power-up ended
         return true;
