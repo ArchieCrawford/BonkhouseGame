@@ -20,80 +20,16 @@ let pendingFarcasterContext = null;
 let gameSettingsReady = false;
 
 // Supabase config
-// Note: a plain `.env` file is not automatically readable from browser JS.
-// For local dev you can serve a `.env` file and we'll parse it here. For production,
-// prefer injecting `window.__ENV = { YOUR_SUPABASE_URL, YOUR_SUPABASE_ANON_KEY }`.
-const isSupabasePlaceholder = (value) => {
-  if (typeof value !== 'string') return true;
-  const trimmed = value.trim();
-  return !trimmed || trimmed.includes('YOUR_SUPABASE');
-};
-
-const parseDotEnvText = (text) => {
-  const out = {};
-  if (typeof text !== 'string') return out;
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq <= 0) continue;
-
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-
-    // Strip surrounding quotes
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-
-    out[key] = value;
-  }
-
-  return out;
-};
-
-const applySupabaseRuntimeConfig = async () => {
-  // 1) window-injected env (recommended for production)
-  const injected = window.__ENV || window.ENV || null;
-  if (injected && typeof injected === 'object') {
-    if (typeof injected.YOUR_SUPABASE_URL === 'string' && injected.YOUR_SUPABASE_URL.trim()) {
-      CONFIG.SUPABASE_URL = injected.YOUR_SUPABASE_URL.trim();
-    }
-    if (typeof injected.YOUR_SUPABASE_ANON_KEY === 'string' && injected.YOUR_SUPABASE_ANON_KEY.trim()) {
-      CONFIG.SUPABASE_ANON_KEY = injected.YOUR_SUPABASE_ANON_KEY.trim();
-    }
-  }
-
-  // 2) served .env file (handy for local dev)
-  if (isSupabasePlaceholder(CONFIG.SUPABASE_URL) || isSupabasePlaceholder(CONFIG.SUPABASE_ANON_KEY)) {
-    try {
-      const res = await fetch('./.env', { cache: 'no-store' });
-      if (res.ok) {
-        const envText = await res.text();
-        const env = parseDotEnvText(envText);
-        if (typeof env.YOUR_SUPABASE_URL === 'string' && env.YOUR_SUPABASE_URL.trim()) {
-          CONFIG.SUPABASE_URL = env.YOUR_SUPABASE_URL.trim();
-        }
-        if (typeof env.YOUR_SUPABASE_ANON_KEY === 'string' && env.YOUR_SUPABASE_ANON_KEY.trim()) {
-          CONFIG.SUPABASE_ANON_KEY = env.YOUR_SUPABASE_ANON_KEY.trim();
-        }
-      }
-    } catch (_) {
-      // ignore
-    }
-  }
-};
-
-await applySupabaseRuntimeConfig();
-
+// Values are resolved in config.js (supports injected env and/or fetching .env for local dev).
 const SUPABASE_URL = CONFIG.SUPABASE_URL;
 const SUPABASE_ANON_KEY = CONFIG.SUPABASE_ANON_KEY;
 const supabaseEnabled = Boolean(
   SUPABASE_URL &&
   SUPABASE_ANON_KEY &&
-  !isSupabasePlaceholder(SUPABASE_URL) &&
-  !isSupabasePlaceholder(SUPABASE_ANON_KEY)
+  typeof SUPABASE_URL === 'string' &&
+  typeof SUPABASE_ANON_KEY === 'string' &&
+  !SUPABASE_URL.includes('YOUR_SUPABASE') &&
+  !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE')
 );
 const supabase = supabaseEnabled ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TIP_RECIPIENT_SOL = 'DbX8NV1SZdWzYLDoexVLXUd8pZZ6fSx4CeusLPdvk8VP';
