@@ -62,6 +62,137 @@ const extractFarcasterUser = (ctx) => {
 
 const getDisplayName = () => gameSettings.playerName || gameSettings.playerDisplayName || 'Player';
 
+const logProgressEvent = (eventName, eventData = {}) => {
+  if (!window.ProgressLogger || typeof window.ProgressLogger.logProgress !== 'function') return;
+  try {
+    window.ProgressLogger.logProgress(eventName, eventData);
+  } catch (err) {
+    console.warn('ProgressLogger failed:', err);
+  }
+};
+
+const getPlayerStats = () => {
+  const saved = localStorage.getItem('bonkhousePlayerStats');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      return {
+        players: parsed.players || {},
+        sessions: parsed.sessions || 0,
+        totalCoins: parsed.totalCoins || 0,
+        totalTime: parsed.totalTime || 0
+      };
+    } catch (err) {
+      console.warn('Failed to parse player stats:', err);
+    }
+  }
+  return { players: {}, sessions: 0, totalCoins: 0, totalTime: 0 };
+};
+
+const savePlayerStats = (stats) => {
+  localStorage.setItem('bonkhousePlayerStats', JSON.stringify(stats));
+};
+
+const recordWalletStats = (address) => {
+  if (!address) return;
+  const stats = getPlayerStats();
+  if (!stats.players[address]) {
+    stats.players[address] = {
+      sessions: 0,
+      totalCoins: 0,
+      totalTime: 0,
+      bestTime: 0,
+      bestWave: 0
+    };
+  }
+  savePlayerStats(stats);
+};
+
+let activeSessionId = null;
+
+const recordSessionStart = () => {
+  if (activeSessionId) return;
+  activeSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const stats = getPlayerStats();
+  stats.sessions += 1;
+  const walletAddress = gameSettings.walletAddress;
+  if (walletAddress) {
+    if (!stats.players[walletAddress]) {
+      stats.players[walletAddress] = {
+        sessions: 0,
+        totalCoins: 0,
+        totalTime: 0,
+        bestTime: 0,
+        bestWave: 0
+      };
+    }
+    stats.players[walletAddress].sessions += 1;
+  }
+  savePlayerStats(stats);
+  logProgressEvent('session_start', {
+    sessionId: activeSessionId,
+    walletAddress,
+    walletChainId: gameSettings.walletChainId,
+    walletSource: gameSettings.walletSource,
+    identitySource: gameSettings.identitySource
+  });
+};
+
+const recordSessionEnd = (score) => {
+  if (!activeSessionId) return;
+  const stats = getPlayerStats();
+  const coins = score?.coins || 0;
+  const time = score?.time || 0;
+  const wave = score?.wave || 0;
+  stats.totalCoins += coins;
+  stats.totalTime += time;
+  const walletAddress = gameSettings.walletAddress;
+  if (walletAddress) {
+    if (!stats.players[walletAddress]) {
+      stats.players[walletAddress] = {
+        sessions: 0,
+        totalCoins: 0,
+        totalTime: 0,
+        bestTime: 0,
+        bestWave: 0
+      };
+    }
+    stats.players[walletAddress].totalCoins += coins;
+    stats.players[walletAddress].totalTime += time;
+    stats.players[walletAddress].bestTime = Math.max(stats.players[walletAddress].bestTime || 0, time);
+    stats.players[walletAddress].bestWave = Math.max(stats.players[walletAddress].bestWave || 0, wave);
+  }
+  savePlayerStats(stats);
+  logProgressEvent('session_end', {
+    sessionId: activeSessionId,
+    walletAddress,
+    walletChainId: gameSettings.walletChainId,
+    walletSource: gameSettings.walletSource,
+    wave,
+    time,
+    coins
+  });
+  activeSessionId = null;
+};
+
+const getScoreHistory = () => {
+  const saved = localStorage.getItem('bonkhouseScoreHistory');
+  if (!saved) return [];
+  try {
+    return JSON.parse(saved);
+  } catch (err) {
+    console.warn('Failed to parse score history:', err);
+    return [];
+  }
+};
+
+const saveScoreHistory = (score) => {
+  const history = getScoreHistory();
+  history.push(score);
+  const trimmed = history.slice(-100);
+  localStorage.setItem('bonkhouseScoreHistory', JSON.stringify(trimmed));
+};
+
 const updateIdentityUI = () => {
   const displayName = getDisplayName();
   if (menuUserNameEl) {
@@ -75,10 +206,16 @@ const updateIdentityUI = () => {
   }
 };
 
-const updateWalletIdentity = (address, chainId) => {
+const updateWalletIdentity = (address, chainId, source = 'wallet') => {
   gameSettings.walletAddress = address;
   gameSettings.walletChainId = chainId;
-  gameSettings.walletSource = 'farcaster';
+  gameSettings.walletSource = source;
+  recordWalletStats(address);
+  logProgressEvent('wallet_connected', {
+    walletAddress: address,
+    walletChainId: chainId,
+    walletSource: source
+  });
   saveSettings();
 };
 
@@ -208,9 +345,31 @@ const getFarcasterWalletProvider = async () => {
   return null;
 };
 
+const getInjectedWalletProvider = () => {
+  if (!window.ethereum) return null;
+  if (Array.isArray(window.ethereum.providers) && window.ethereum.providers.length > 0) {
+    return window.ethereum.providers.find((provider) => provider?.isMetaMask) || window.ethereum.providers[0];
+  }
+  return window.ethereum;
+};
+
+const getWalletProvider = async () => {
+  const farcasterProvider = await getFarcasterWalletProvider();
+  if (farcasterProvider) return { provider: farcasterProvider, source: 'farcaster' };
+  const injectedProvider = getInjectedWalletProvider();
+  if (injectedProvider?.request) return { provider: injectedProvider, source: 'injected' };
+  return null;
+};
+
 const refreshWalletIdentity = async (forcePrompt = false) => {
-  const provider = await getFarcasterWalletProvider();
-  if (!provider) return false;
+  const walletInfo = await getWalletProvider();
+  if (!walletInfo) {
+    if (forcePrompt) {
+      showTipToast('No wallet provider detected.');
+    }
+    return false;
+  }
+  const { provider, source } = walletInfo;
   
   let accounts = [];
   try {
@@ -224,7 +383,12 @@ const refreshWalletIdentity = async (forcePrompt = false) => {
   }
   
   const address = accounts?.[0];
-  if (!address) return false;
+  if (!address) {
+    if (forcePrompt) {
+      showTipToast('Wallet not connected.');
+    }
+    return false;
+  }
   
   let chainId = null;
   try {
@@ -233,8 +397,14 @@ const refreshWalletIdentity = async (forcePrompt = false) => {
     console.warn('Unable to read chainId for wallet identity:', err);
   }
   
-  updateWalletIdentity(address, chainId);
+  updateWalletIdentity(address, chainId, source);
   return true;
+};
+
+const ensureWalletConnection = async () => {
+  const refreshed = await refreshWalletIdentity(false);
+  if (refreshed) return true;
+  return refreshWalletIdentity(true);
 };
 
 const sendUsdcTip = async (provider, amount) => {
@@ -388,9 +558,9 @@ const showTipCopyMenu = (options) => {
 };
 
 const handleTipClick = async () => {
-  const provider = await getFarcasterWalletProvider();
-  if (provider) {
-    showTipWalletMenu(provider);
+  const walletInfo = await getWalletProvider();
+  if (walletInfo?.provider) {
+    showTipWalletMenu(walletInfo.provider);
     return;
   }
   
@@ -687,6 +857,14 @@ let characterStore = {
       price: 0,
       owned: true,
       glbUrl: 'https://rosebud.ai/assets/Meshy_Merged_Animations.glb?wfmY'
+    },
+    {
+      id: 'lc',
+      name: 'LC',
+      icon: '<img src="assets/Character/LC.png" alt="LC" loading="lazy">',
+      price: 3500,
+      owned: false,
+      glbUrl: null
     },
     {
       id: 'warrior',
@@ -1018,6 +1196,9 @@ function saveHighScore(wave, time, coins) {
     coins: coins,
     date: Date.now()
   };
+
+  saveScoreHistory(score);
+  logProgressEvent('score_saved', score);
   
   // Check if this is a new high score before adding
   const isNewHighScore = leaderboard.length === 0 || time > leaderboard[0].time;
@@ -1134,13 +1315,12 @@ document.getElementById('topLeft').addEventListener('click', () => {
 });
 
 // Event listeners
-playBtnEl.addEventListener('click', () => {
+playBtnEl.addEventListener('click', async () => {
   audio.init();
+  const hasWallet = await ensureWalletConnection();
+  if (!hasWallet) return;
   mainMenuEl.classList.remove('show');
   startWaveBtn.classList.add('show');
-  if (!gameSettings.walletAddress) {
-    refreshWalletIdentity(true);
-  }
 });
 
 settingsBtnEl.addEventListener('click', () => {
@@ -1217,8 +1397,10 @@ document.querySelectorAll('.difficulty-btn').forEach(btn => {
   });
 });
 
-startWaveBtn.addEventListener('click', () => {
+startWaveBtn.addEventListener('click', async () => {
   audio.init();
+  const hasWallet = await ensureWalletConnection();
+  if (!hasWallet) return;
   startWave();
 });
 
@@ -1474,6 +1656,7 @@ function startWave() {
   // Start time tracking on first wave
   if (gameState.wave === 1) {
     gameState.gameStartTime = Date.now();
+    recordSessionStart();
     // Start background music
     audio.startMusic(gameState.wave);
   } else {
@@ -2218,6 +2401,11 @@ function endGame() {
   } else {
     newHighScoreMsgEl.style.display = 'none';
   }
+  recordSessionEnd({
+    wave: gameState.wave,
+    time: gameState.survivalTime,
+    coins: gameState.coins
+  });
   
   gameOverEl.classList.add('show');
 }
@@ -2225,6 +2413,15 @@ function endGame() {
 function restartGame() {
   // Stop music
   audio.stopMusic();
+
+  if (activeSessionId && gameState.gameStartTime) {
+    const survivalTime = (Date.now() - gameState.gameStartTime) / 1000;
+    recordSessionEnd({
+      wave: gameState.wave,
+      time: survivalTime,
+      coins: gameState.coins
+    });
+  }
   
   // Reset game state
   gameState = {
