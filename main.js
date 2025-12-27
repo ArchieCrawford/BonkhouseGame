@@ -170,29 +170,38 @@ const recordSessionStartRemote = async ({ wallet }) => {
     device: getDeviceLabel(),
     referrer: document.referrer || null
   };
-  const { data, error } = await supabase
-    .from('sessions')
-    .insert([payload])
-    .select('id')
-    .single();
-  if (error) {
-    console.warn('Supabase session start failed:', error);
+  try {
+    const { data, error } = await supabase
+      .from('sessions')
+      .insert([payload])
+      .select('id')
+      .single();
+    if (error) {
+      console.warn('Supabase session start failed:', error);
+      return null;
+    }
+    return data?.id || null;
+  } catch (err) {
+    console.warn('Supabase session start failed:', err);
     return null;
   }
-  return data?.id || null;
 };
 
 const recordSessionEndRemote = async ({ sessionId, durationMs }) => {
   if (!supabase || !sessionId) return;
-  const { error } = await supabase
-    .from('sessions')
-    .update({
-      ended_at: new Date().toISOString(),
-      duration_ms: durationMs || null
-    })
-    .eq('id', sessionId);
-  if (error) {
-    console.warn('Supabase session end failed:', error);
+  try {
+    const { error } = await supabase
+      .from('sessions')
+      .update({
+        ended_at: new Date().toISOString(),
+        duration_ms: durationMs || null
+      })
+      .eq('id', sessionId);
+    if (error) {
+      console.warn('Supabase session end failed:', error);
+    }
+  } catch (err) {
+    console.warn('Supabase session end failed:', err);
   }
 };
 
@@ -207,23 +216,32 @@ const saveScoreRemote = async ({ wallet, score, wave, durationMs, sessionId }) =
     session_id: sessionId || null,
     signature: null
   };
-  const { error } = await supabase.from('scores').insert([payload]);
-  if (error) {
-    console.warn('Supabase score save failed:', error);
+  try {
+    const { error } = await supabase.from('scores').insert([payload]);
+    if (error) {
+      console.warn('Supabase score save failed:', error);
+    }
+  } catch (err) {
+    console.warn('Supabase score save failed:', err);
   }
 };
 
 const fetchLeaderboardRemote = async (limit = 50) => {
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('leaderboard_top')
-    .select('*')
-    .limit(limit);
-  if (error) {
-    console.warn('Supabase leaderboard fetch failed:', error);
+  try {
+    const { data, error } = await supabase
+      .from('leaderboard_top')
+      .select('*')
+      .limit(limit);
+    if (error) {
+      console.warn('Supabase leaderboard fetch failed:', error);
+      return null;
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('Supabase leaderboard fetch failed:', err);
     return null;
   }
-  return data || [];
 };
 
 const getPlayerStats = () => {
@@ -269,6 +287,7 @@ let activeSupabaseSessionId = null;
 const recordSessionStart = async () => {
   if (activeSessionId) return;
   activeSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  activeSupabaseSessionId = null;
   const stats = getPlayerStats();
   stats.sessions += 1;
   const walletAddress = gameSettings.walletAddress;

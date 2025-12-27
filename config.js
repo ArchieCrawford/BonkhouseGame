@@ -49,3 +49,75 @@ export const CONFIG = {
   POWERUP_DURATION: 10, // Seconds
   POWERUP_SPEED: 3, // Units per second
 };
+
+// Runtime env support (browser)
+// A plain `.env` file is not automatically readable from browser JS; this enables:
+// 1) Injected env via `window.__ENV` / `window.ENV`
+// 2) Local dev via fetching `./.env` (only works if your server serves dotfiles)
+
+const isPlaceholder = (value) => {
+  if (typeof value !== 'string') return true;
+  const trimmed = value.trim();
+  return !trimmed || trimmed.includes('YOUR_SUPABASE');
+};
+
+const parseDotEnvText = (text) => {
+  const out = {};
+  if (typeof text !== 'string') return out;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    out[key] = value;
+  }
+
+  return out;
+};
+
+export const applyRuntimeConfig = async () => {
+  const g = globalThis;
+
+  // 1) window-injected env (recommended for production)
+  const injected = (g && (g.__ENV || g.ENV)) || null;
+  if (injected && typeof injected === 'object') {
+    if (typeof injected.YOUR_SUPABASE_URL === 'string' && injected.YOUR_SUPABASE_URL.trim()) {
+      CONFIG.SUPABASE_URL = injected.YOUR_SUPABASE_URL.trim();
+    }
+    if (typeof injected.YOUR_SUPABASE_ANON_KEY === 'string' && injected.YOUR_SUPABASE_ANON_KEY.trim()) {
+      CONFIG.SUPABASE_ANON_KEY = injected.YOUR_SUPABASE_ANON_KEY.trim();
+    }
+  }
+
+  // 2) served .env file (handy for local dev)
+  if (isPlaceholder(CONFIG.SUPABASE_URL) || isPlaceholder(CONFIG.SUPABASE_ANON_KEY)) {
+    try {
+      const res = await fetch('./.env', { cache: 'no-store' });
+      if (res.ok) {
+        const envText = await res.text();
+        const env = parseDotEnvText(envText);
+
+        if (typeof env.YOUR_SUPABASE_URL === 'string' && env.YOUR_SUPABASE_URL.trim()) {
+          CONFIG.SUPABASE_URL = env.YOUR_SUPABASE_URL.trim();
+        }
+        if (typeof env.YOUR_SUPABASE_ANON_KEY === 'string' && env.YOUR_SUPABASE_ANON_KEY.trim()) {
+          CONFIG.SUPABASE_ANON_KEY = env.YOUR_SUPABASE_ANON_KEY.trim();
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+};
+
+await applyRuntimeConfig();
