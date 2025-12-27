@@ -31,6 +31,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/@farcaster/auth-kit@0.8.1/dist/style.css">
     <script type="importmap">
       {
         "imports": {
@@ -339,6 +340,20 @@
         border-color: #4a90e2;
         font-size: 20px;
         padding: 15px 40px;
+      }
+      #farcasterSignIn {
+        display: flex;
+        justify-content: center;
+        margin: 15px 0 10px;
+      }
+      #farcasterSignIn .fc-authkit-signin-button {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+      }
+      #farcasterSignIn .fc-authkit-signin-button > button {
+        width: 100%;
+        max-width: 260px;
       }
       #upgradesMenu {
         position: absolute;
@@ -953,6 +968,7 @@
         <div id="menuTitle">BONKHOUSE</div>
         <div id="menuSubtitle">Defend the Lane</div>
         <div id="menuUserRow">PLAYER: <span id="menuUserName">Player</span></div>
+        <div id="farcasterSignIn"></div>
         <button id="playBtn" class="menu-btn">PLAY</button>
         <button id="storeBtn" class="menu-btn secondary">STORE</button>
         <button id="leaderboardBtn" class="menu-btn secondary">LEADERBOARD</button>
@@ -1111,6 +1127,7 @@
       </div>
     </div>
     <script type="module" src="main.js"></script>
+    <script type="module" src="auth-kit.js"></script>
     <script src="https://storage.googleapis.com/rosebud_staticfiles/ChatManager.js"></script>
     <script src="https://storage.googleapis.com/rosebud_staticfiles/ImageGenerator.js"></script>
     <script src="https://storage.googleapis.com/rosebud_staticfiles/ProgressLogger.js"></script>

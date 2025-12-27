@@ -18,6 +18,7 @@ const farcasterActions = farcasterSdk.actions || farcaster.actions;
 const farcasterContext = farcasterSdk.context || farcaster.context;
 let pendingFarcasterContext = null;
 let gameSettingsReady = false;
+let authKitAuthenticated = false;
 
 // Supabase config
 // Values are resolved in config.js (supports injected env and/or fetching .env for local dev).
@@ -361,9 +362,71 @@ const applyFarcasterIdentity = (ctx) => {
   return true;
 };
 
+const getAuthKitWalletAddress = (profile) => {
+  if (!profile) return null;
+  if (profile.custody) return profile.custody;
+  if (Array.isArray(profile.verifications) && profile.verifications.length > 0) {
+    return profile.verifications[0];
+  }
+  return null;
+};
+
+const applyAuthKitProfile = (profile) => {
+  const fid = profile?.fid ?? null;
+  if (fid === null || fid === undefined) return false;
+
+  const username = profile.username || profile.displayName || `fid-${fid}`;
+  const displayName = profile.displayName || profile.username || `FID ${fid}`;
+
+  gameSettings.playerName = username;
+  gameSettings.playerId = `fid:${fid}`;
+  gameSettings.playerFid = fid;
+  gameSettings.playerDisplayName = displayName;
+  gameSettings.playerPfpUrl = profile.pfpUrl || null;
+  gameSettings.identitySource = 'farcaster-authkit';
+
+  if (playerNameInputEl) {
+    playerNameInputEl.value = username;
+    playerNameInputEl.readOnly = true;
+    playerNameInputEl.title = 'Linked to Farcaster identity';
+  }
+
+  const walletAddress = getAuthKitWalletAddress(profile);
+  if (walletAddress) {
+    updateWalletIdentity(walletAddress, null, 'farcaster-authkit');
+  } else {
+    saveSettings();
+  }
+  updateIdentityUI();
+  return true;
+};
+
+const resetToGuestIdentity = () => {
+  gameSettings.identitySource = 'guest';
+  gameSettings.playerName = 'Player';
+  gameSettings.playerId = null;
+  gameSettings.playerFid = null;
+  gameSettings.playerDisplayName = null;
+  gameSettings.playerPfpUrl = null;
+  gameSettings.walletAddress = null;
+  gameSettings.walletChainId = null;
+  gameSettings.walletSource = null;
+  ensureGuestIdentity();
+  saveSettings();
+};
+
 const ensureGuestIdentity = () => {
   const hasFarcasterContext = Boolean(pendingFarcasterContext || window.farcasterContext);
   if (gameSettings.identitySource === 'farcaster' && hasFarcasterContext) return;
+  if (gameSettings.identitySource === 'farcaster-authkit') {
+    if (playerNameInputEl) {
+      playerNameInputEl.value = gameSettings.playerName || 'Player';
+      playerNameInputEl.readOnly = true;
+      playerNameInputEl.title = 'Linked to Farcaster identity';
+    }
+    updateIdentityUI();
+    return;
+  }
   
   const guestId = gameSettings.playerId || getOrCreateGuestId();
   if (!gameSettings.playerName || gameSettings.playerName === 'Player') {
@@ -390,6 +453,20 @@ const storeFarcasterContext = (ctx) => {
     }
   }
 };
+
+window.addEventListener('farcaster-auth:sign-in', (event) => {
+  const profile = event?.detail || null;
+  if (applyAuthKitProfile(profile)) {
+    authKitAuthenticated = true;
+  }
+});
+
+window.addEventListener('farcaster-auth:sign-out', () => {
+  authKitAuthenticated = false;
+  if (gameSettings.identitySource === 'farcaster-authkit') {
+    resetToGuestIdentity();
+  }
+});
 
 const showTipToast = (message) => {
   const toast = document.createElement('div');
@@ -519,6 +596,12 @@ const refreshWalletIdentity = async (forcePrompt = false) => {
 };
 
 const ensureWalletConnection = async () => {
+  if (authKitAuthenticated) return true;
+  if (gameSettings.identitySource === 'farcaster-authkit') {
+    showTipToast('Sign in with Farcaster to play.');
+    return false;
+  }
+  if (gameSettings.walletAddress) return true;
   const refreshed = await refreshWalletIdentity(false);
   if (refreshed) return true;
   return refreshWalletIdentity(true);
@@ -1263,7 +1346,7 @@ function loadSettings() {
 
 function saveSettings() {
   const currentSettings = JSON.parse(localStorage.getItem('bonkhouseSettings') || '{}');
-  const isFarcasterLocked = gameSettings.identitySource === 'farcaster';
+  const isFarcasterLocked = gameSettings.identitySource === 'farcaster' || gameSettings.identitySource === 'farcaster-authkit';
   const inputName = playerNameInputEl.value.trim();
   
   if (!isFarcasterLocked) {
