@@ -2110,6 +2110,25 @@ function findClosestEnemy() {
   return closest;
 }
 
+function getPistolBullet() {
+  const bullet = bulletPool.get();
+  if (bullet) return bullet;
+
+  const activeBullets = bulletPool.getActive();
+  if (activeBullets.length === 0) return null;
+
+  // Reuse the farthest bullet to guarantee pistol shots.
+  let candidate = activeBullets[0];
+  let minZ = candidate.mesh.position.z;
+  for (const activeBullet of activeBullets) {
+    if (activeBullet.mesh.position.z < minZ) {
+      minZ = activeBullet.mesh.position.z;
+      candidate = activeBullet;
+    }
+  }
+  return candidate;
+}
+
 function fallbackToPistol() {
   if (player.weaponMode === 'normal') return false;
   player.weaponMode = 'normal';
@@ -2172,7 +2191,7 @@ function shootBullet() {
       
     default:
       // Normal bullet
-      const bullet = bulletPool.get();
+      const bullet = getPistolBullet();
       if (bullet) {
         bullet.spawn(playerPos);
         bulletsSpawned = 1;
@@ -2183,7 +2202,7 @@ function shootBullet() {
   if (bulletsSpawned === 0 && player.weaponMode !== 'normal') {
     fallbackToPistol();
     weaponModeUsed = 'normal';
-    const fallbackBullet = bulletPool.get();
+    const fallbackBullet = getPistolBullet();
     if (fallbackBullet) {
       fallbackBullet.spawn(playerPos);
       bulletsSpawned = 1;
